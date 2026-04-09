@@ -1,7 +1,7 @@
 .vscode
 authservice/*
 restaurantservice/*
-cartservice/*
+menuservice/*
 orderservice/*
 paymentservice/*
 deliveryservice/*
