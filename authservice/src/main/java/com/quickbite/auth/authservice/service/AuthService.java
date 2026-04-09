@@ -3,6 +3,7 @@ package com.quickbite.auth.authservice.service;
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.responseDto.AuthResponseDto;
+import com.quickbite.auth.authservice.entity.User;
 import com.quickbite.auth.authservice.exception.InvalidEmailException;
 import com.quickbite.auth.authservice.exception.InvalidPasswordException;
 import com.quickbite.auth.authservice.exception.InvalidPhoneNumberException;
@@ -16,4 +17,18 @@ public interface AuthService {
     AuthResponseDto login(LoginRequestDto request) throws Exception;
 
     void logout(HttpServletRequest request);
+
+    boolean validateToken(String token);
+
+    AuthResponseDto refreshToken(String token);
+
+    User getUserByEmail(String email);
+
+    User getUserById(Long id);
+
+    User updateProfile(Long userId, RegisterRequestDto request);
+
+    void changePassword(Long userId, String oldPassword, String newPassword);
+
+    void deactivateAccount(Long userId);
 }

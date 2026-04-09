@@ -48,7 +48,7 @@ public class OAuthSuccessHandler extends SimpleUrlAuthenticationSuccessHandler{
                                     return userRepository.save(newUser);
                                 });
 
-        String token = jwtUtil.generateToken(email, user.getRole().toString());
+        String token = jwtUtil.generateToken(user.getId(),email, user.getRole().toString());
     
         String backendRedirectUrl = "http://localhost:8080/dashboard"
                 + "?token=" + token
@@ -62,7 +62,7 @@ public class OAuthSuccessHandler extends SimpleUrlAuthenticationSuccessHandler{
                 + "&email=" + email;
         */
     
-        response.sendRedirect("http://localhost:8080/oauth-success?token=" + token);
+        response.sendRedirect("http://localhost:8080/auth/oauth-success?token=" + token);
     }
 
     

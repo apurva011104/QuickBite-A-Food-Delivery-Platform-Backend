@@ -57,7 +57,7 @@ public class AuthServiceImpl implements AuthService {
         User user = AuthMapper.registerDtoToUser(request, AuthProvider.LOCAL);
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         userRepository.save(user);
-        String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().toString());
+        String accessToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().toString());
         return AuthMapper.userToAuthResponse(user, accessToken);
 
     }
@@ -76,7 +76,7 @@ public class AuthServiceImpl implements AuthService {
             if(!passwordEncoder.matches(request.getPassword(), u.getPassword())){
                 throw new InvalidUserCredentialsException("Invalid password");
             }
-            String accessToken = jwtUtil.generateToken(email, u.getRole().toString());
+            String accessToken = jwtUtil.generateToken(u.getId(), email, u.getRole().toString());
             return new AuthResponseDto(u.getName(), email, u.getPhoneNumber(), u.getRole(), accessToken );
         }
 
@@ -91,7 +91,7 @@ public class AuthServiceImpl implements AuthService {
             if(!passwordEncoder.matches(request.getPassword(), u.getPassword())){
                 throw new InvalidUserCredentialsException("Invalid password");
             }
-            String accessToken = jwtUtil.generateToken(u.getEmail(), u.getRole().toString());
+            String accessToken = jwtUtil.generateToken(u.getId(), u.getEmail(), u.getRole().toString());
             return new AuthResponseDto(u.getName(), u.getEmail(), phoneNumber, u.getRole(), accessToken);
         }
         
@@ -107,6 +107,74 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    @Override
+    public boolean validateToken(String token) {
+        try {
+            String email = jwtUtil.extractEmail(token);
+            return jwtUtil.isTokenValid(token, email);
+        } catch (Exception e) {
+            return false;
+        }
+        
+    }
+
+    @Override
+    public AuthResponseDto refreshToken(String token) {
+        String email = jwtUtil.extractEmail(token);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String newToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().toString());
+        return AuthMapper.userToAuthResponse(user, newToken);
+    }
+
+    @Override
+    public User getUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    @Override
+    public User getUserById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    @Override
+    public User updateProfile(Long userId, RegisterRequestDto request) {
+
+        User user = getUserById(userId);
+
+        user.setName(request.getName()==null ? user.getName() : request.getName());
+        user.setPhoneNumber(request.getPhoneNumber()==null ? user.getPhoneNumber() : request.getPhoneNumber());
+
+        return userRepository.save(user);
+    }
+
+    @Override
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+
+        User user = getUserById(userId);
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new RuntimeException("Invalid old password");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+
+        userRepository.save(user);
+    }
+
+    @Override
+    public void deactivateAccount(Long userId) {
+
+        User user = getUserById(userId);
+
+        user.setActive(false);
+
+        userRepository.save(user);
+    }
+    
     private String extractToken(HttpServletRequest request){
         String header = request.getHeader("Authorization");
 

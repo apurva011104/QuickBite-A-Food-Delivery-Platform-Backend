@@ -32,7 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        if (path.startsWith("/auth") || path.startsWith("/oauth2") || path.startsWith("/login")) {
+        if (path.startsWith("/auth/register") || path.startsWith("/auth/login") || path.startsWith("/auth/oauth-success") || path.startsWith("/oauth2") || path.startsWith("/login")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -51,7 +51,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            email = jwtUtil.extractEmail(token);
+            try {
+                email = jwtUtil.extractEmail(token);
+            } catch (Exception e) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
         }
 
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
