@@ -1,0 +1,10 @@
+.vscode
+authservice/*
+restaurantservice/*
+cartservice/*
+orderservice/*
+paymentservice/*
+deliveryservice/*
+reviewservice/*
+notificationservice/*
+quickbiteweb/*
