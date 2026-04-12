@@ -8,6 +8,7 @@ public class MenuserviceApplication {
 
 	public static void main(String[] args) {
 		SpringApplication.run(MenuserviceApplication.class, args);
+		System.out.println("Menu Service is running...");
 	}
 
 }

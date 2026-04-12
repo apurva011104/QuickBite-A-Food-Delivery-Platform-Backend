@@ -29,7 +29,7 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, Long>{
 
     List<MenuItem> findByRatingLessThanEqual(double rating);
 
-    List<MenuItem> findByRatingMoreThanEqual(double rating);
+    List<MenuItem> findByRatingGreaterThanEqual(double rating);
     
     long countByRestaurantId(Long restaurantId);
 
