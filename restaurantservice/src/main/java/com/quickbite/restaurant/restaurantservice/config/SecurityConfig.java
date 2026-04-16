@@ -23,9 +23,9 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/restaurants/public/**").permitAll()
-                        .requestMatchers("/api/restaurants/owner/**").hasRole("OWNER")
-                        .requestMatchers("/api/restaurants/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/restaurants/public/**").permitAll()
+                        .requestMatchers("/restaurants/owner/**").hasRole("OWNER")
+                        .requestMatchers("/restaurants/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
