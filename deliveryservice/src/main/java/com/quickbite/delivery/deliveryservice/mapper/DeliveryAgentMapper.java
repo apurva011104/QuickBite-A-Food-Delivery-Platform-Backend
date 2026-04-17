@@ -10,26 +10,39 @@ import com.quickbite.delivery.deliveryservice.entity.DeliveryAgent;
 public class DeliveryAgentMapper {
 
     public DeliveryAgent toEntity(DeliveryAgentRequestDto dto) {
-        return new DeliveryAgent(
-                dto.getUserId(),
-                dto.getFullName(),
-                dto.getPhone(),
-                dto.getVehicleType(),
-                dto.getVehicleNumber(),
-                dto.getCurrentLatitude(),
-                dto.getCurrentLongitude()
-        );
+        if (dto == null) {
+            return null;
+        }
+
+        DeliveryAgent agent = new DeliveryAgent();
+        agent.setUserId(dto.getUserId());
+        agent.setFullName(dto.getFullName());
+        agent.setPhone(dto.getPhone());
+        agent.setVehicleType(dto.getVehicleType());
+        agent.setVehicleNumber(dto.getVehicleNumber());
+
+        return agent;
     }
 
-    public DeliveryAgentResponseDto toDto(DeliveryAgent agent) {
+    public DeliveryAgentResponseDto toResponseDto(DeliveryAgent agent) {
+        if (agent == null) {
+            return null;
+        }
+
         DeliveryAgentResponseDto dto = new DeliveryAgentResponseDto();
-        dto.setAgentId(agent.getId());
+        dto.setAgentId(agent.getAgentId());
+        dto.setUserId(agent.getUserId());
         dto.setFullName(agent.getFullName());
         dto.setPhone(agent.getPhone());
-        dto.setVehicleType(agent.getVehicleType().name());
+        dto.setVehicleType(agent.getVehicleType());
+        dto.setVehicleNumber(agent.getVehicleNumber());
+        dto.setCurrentLatitude(agent.getCurrentLatitude());
+        dto.setCurrentLongitude(agent.getCurrentLongitude());
         dto.setAvailable(agent.isAvailable());
         dto.setVerified(agent.isVerified());
         dto.setAvgRating(agent.getAvgRating());
+        dto.setTotalDeliveries(agent.getTotalDeliveries());
+
         return dto;
     }
 }

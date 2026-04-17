@@ -1,33 +1,26 @@
 package com.quickbite.delivery.deliveryservice.dto.requestDto;
 
-import java.math.BigDecimal;
+import com.quickbite.delivery.deliveryservice.enums.VehicleType;
 
-import com.quickbite.delivery.deliveryservice.entity.VehicleType;
-
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
 public class DeliveryAgentRequestDto {
 
-    @NotNull
-    private String userId;
+    @NotNull(message = "User ID is required")
+    private Long userId;
 
-    @NotNull
+    @NotBlank(message = "Full name is required")
     private String fullName;
 
-    @NotNull
+    @NotBlank(message = "Phone number is required")
     private String phone;
 
-    @NotNull
+    @NotNull(message = "Vehicle type is required")
     private VehicleType vehicleType;
 
-    @NotNull
+    @NotBlank(message = "Vehicle number is required")
     private String vehicleNumber;
-
-    @NotNull
-    private BigDecimal currentLatitude;
-
-    @NotNull
-    private BigDecimal currentLongitude;
 }

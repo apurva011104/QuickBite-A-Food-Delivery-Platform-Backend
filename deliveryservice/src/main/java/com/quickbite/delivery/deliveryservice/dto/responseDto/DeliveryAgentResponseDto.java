@@ -1,20 +1,24 @@
 package com.quickbite.delivery.deliveryservice.dto.responseDto;
 
-import lombok.AllArgsConstructor;
+import java.math.BigDecimal;
+
+import com.quickbite.delivery.deliveryservice.enums.VehicleType;
+
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 @Data
-@AllArgsConstructor
-@NoArgsConstructor
 public class DeliveryAgentResponseDto {
-    
+
     private Long agentId;
+    private Long userId;
     private String fullName;
     private String phone;
-    private String vehicleType;
-    private boolean isAvailable;
-    private boolean isVerified;
-    private double avgRating;
-
+    private VehicleType vehicleType;
+    private String vehicleNumber;
+    private BigDecimal currentLatitude;
+    private BigDecimal currentLongitude;
+    private boolean available;
+    private boolean verified;
+    private BigDecimal avgRating;
+    private Integer totalDeliveries;
 }

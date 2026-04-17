@@ -2,11 +2,14 @@ package com.quickbite.delivery.deliveryservice.dto.responseDto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
 @AllArgsConstructor
-public class AssignResponseDto {
+@NoArgsConstructor
+public class ActiveDeliveryResponseDto {
+
+    private Long orderId;
     private Long agentId;
-    private String fullName;
-    private String phone;
+    private String status;
 }
