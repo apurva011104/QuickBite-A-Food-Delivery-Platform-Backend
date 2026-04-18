@@ -10,7 +10,9 @@ import com.quickbite.cart.cartservice.entity.Cart;
 public class CartMapper {
     
     public static Cart dtoToEntity(CartRequestDto dto){
-        return new Cart(dto.getCustomerId(), dto.getRestaurantId());
+        Cart cart = new Cart();
+        cart.setRestaurantId(dto.getRestaurantId());
+        return cart;
     }
 
     public static CartResponseDto entityToDto(Cart cart, List<CartItemResponseDto> cartItems){

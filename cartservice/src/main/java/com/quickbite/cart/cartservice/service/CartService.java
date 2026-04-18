@@ -9,7 +9,7 @@ public interface CartService {
 
     CartResponseDto getCartByCustomerId(Long customerId);
 
-    CartResponseDto addItemToCart(CartItemRequestDto dto);
+    CartResponseDto addItemToCart(Long customerId, CartItemRequestDto dto);
 
     void removeItemFromCart(Long customerId, Long itemId);
 
@@ -17,8 +17,7 @@ public interface CartService {
 
     void clearCart(Long customerId);
 
-    CartResponseDto changeRestaurant(CartRequestDto dto);
+    CartResponseDto changeRestaurant(Long customerId, CartRequestDto dto);
 
     CartResponseDto applyPromoCode(Long customerId, String promoCode);
-
 }
