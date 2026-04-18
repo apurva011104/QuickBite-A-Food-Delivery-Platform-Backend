@@ -1,6 +1,7 @@
 package com.quickbite.auth.authservice.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,43 +18,50 @@ import com.quickbite.auth.authservice.dto.requestDto.ChangePasswordRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.responseDto.AuthResponseDto;
+import com.quickbite.auth.authservice.dto.responseDto.UserProfileResponseDto;
 import com.quickbite.auth.authservice.entity.User;
+import com.quickbite.auth.authservice.exception.InvalidPasswordException;
+import com.quickbite.auth.authservice.exception.InvalidPhoneNumberException;
+import com.quickbite.auth.authservice.mapper.AuthMapper;
 import com.quickbite.auth.authservice.service.AuthService;
 
 import jakarta.servlet.http.HttpServletRequest;
-
 
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
 
-    @Autowired
-    private AuthService authService;
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
-    @PostMapping("/register")
-    public AuthResponseDto register(@RequestBody RegisterRequestDto registerRequestDto) throws Exception{
-        AuthResponseDto dto = authService.register(registerRequestDto);
-        System.out.println("Registered token: " + dto.getAccessToken());
-        return dto;
+    private final AuthService authService;
+
+    public AuthController(AuthService authService) {
+        this.authService = authService;
     }
 
-    
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponseDto> register(@RequestBody RegisterRequestDto request) throws Exception {
+        AuthResponseDto response = authService.register(request);
+        log.info("User registered successfully. email={} role={}", response.getEmail(), response.getRole());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/login")
-    public AuthResponseDto login(@RequestBody LoginRequestDto loginRequestDto) throws Exception{
-        System.out.println("Logged in");
-        return authService.login(loginRequestDto);
+    public ResponseEntity<AuthResponseDto> login(@RequestBody LoginRequestDto request) throws Exception {
+        AuthResponseDto response = authService.login(request);
+        log.info("User logged in successfully. email={}", response.getEmail());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/oauth-success")
-    public String success(@RequestParam String token) {
-        System.out.println(token);
-        return token;
+    public ResponseEntity<String> success(@RequestParam String token) {
+        return ResponseEntity.ok(token);
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<String> logout(HttpServletRequest request){
+    public ResponseEntity<String> logout(HttpServletRequest request) {
         authService.logout(request);
-        System.out.println("Logged out. Token: "+ request.getHeader("Authorization"));
+        log.info("Logout request processed");
         return ResponseEntity.ok("Logged out successfully");
     }
 
@@ -70,23 +78,29 @@ public class AuthController {
     }
 
     @GetMapping("/profile")
-    public ResponseEntity<User> getProfile(Authentication auth) {
+    public ResponseEntity<UserProfileResponseDto> getProfile(Authentication auth) {
         String email = auth.getName();
-        return ResponseEntity.ok(authService.getUserByEmail(email));
+        User user = authService.getUserByEmail(email);
+        return ResponseEntity.ok(AuthMapper.userToProfileResponse(user));
     }
 
     @PutMapping("/profile")
-    public ResponseEntity<User> updateProfile(Authentication auth, @RequestBody RegisterRequestDto request) {
+    public ResponseEntity<UserProfileResponseDto> updateProfile(Authentication auth,
+                                                                @RequestBody RegisterRequestDto request) throws InvalidPhoneNumberException {
         String email = auth.getName();
-        User user = authService.getUserByEmail(email);
-        return ResponseEntity.ok(authService.updateProfile(user.getId(), request));
+        User currentUser = authService.getUserByEmail(email);
+        User updated = authService.updateProfile(currentUser.getId(), request);
+        log.info("Profile updated for userId={}", updated.getId());
+        return ResponseEntity.ok(AuthMapper.userToProfileResponse(updated));
     }
 
     @PutMapping("/password")
-    public ResponseEntity<String> changePassword(Authentication auth, @RequestBody ChangePasswordRequestDto request) {
+    public ResponseEntity<String> changePassword(Authentication auth,
+                                                 @RequestBody ChangePasswordRequestDto request) throws InvalidPasswordException {
         String email = auth.getName();
         User user = authService.getUserByEmail(email);
         authService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
+        log.info("Password changed for userId={}", user.getId());
         return ResponseEntity.ok("Password updated");
     }
 
@@ -95,7 +109,7 @@ public class AuthController {
         String email = auth.getName();
         User user = authService.getUserByEmail(email);
         authService.deactivateAccount(user.getId());
+        log.info("Account deactivated for userId={}", user.getId());
         return ResponseEntity.ok("Account deactivated");
-    }   
-    
+    }
 }

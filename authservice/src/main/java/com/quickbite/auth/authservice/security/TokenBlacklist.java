@@ -1,25 +1,20 @@
 package com.quickbite.auth.authservice.security;
 
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Component;
 
 @Component
 public class TokenBlacklist {
 
-    private final Set<String> blacklist;
+    private final Set<String> blacklist = ConcurrentHashMap.newKeySet();
 
-    public TokenBlacklist() {
-        this.blacklist = new HashSet<>();
-    }
-
-    public void add(String token){
+    public void add(String token) {
         blacklist.add(token);
     }
 
-    public boolean isBlacklisted(String token){
+    public boolean isBlacklisted(String token) {
         return blacklist.contains(token);
     }
-    
 }

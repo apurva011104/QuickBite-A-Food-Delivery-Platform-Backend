@@ -26,9 +26,9 @@ public interface AuthService {
 
     User getUserById(Long id);
 
-    User updateProfile(Long userId, RegisterRequestDto request);
+    User updateProfile(Long userId, RegisterRequestDto request) throws InvalidPhoneNumberException;
 
-    void changePassword(Long userId, String oldPassword, String newPassword);
+    void changePassword(Long userId, String oldPassword, String newPassword) throws InvalidPasswordException;
 
     void deactivateAccount(Long userId);
 }
