@@ -33,6 +33,7 @@ public class Restaurant {
     private String phone;
 
     private Double avgRating = 0.0;
+    private Long ratingCount = 0L;
 
     private boolean isOpen = false;
     private boolean isApproved = false;

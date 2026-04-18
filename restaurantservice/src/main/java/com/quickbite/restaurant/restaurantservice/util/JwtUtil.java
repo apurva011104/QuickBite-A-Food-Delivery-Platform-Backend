@@ -1,5 +1,6 @@
 package com.quickbite.restaurant.restaurantservice.util;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
@@ -17,11 +18,8 @@ public class JwtUtil {
     @Value("${jwt.secret}")
     private String secret;
 
-    @Value("${jwt.expiration}")
-    private long expiration;
-
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String extractEmail(String token) {
@@ -29,10 +27,16 @@ public class JwtUtil {
     }
 
     public Long extractUserId(String token) {
-        Claims claims = extractClaims(token);
-        return claims.get("userId", Integer.class).longValue();
+        Object value = extractClaims(token).get("userId");
+        if (value instanceof Integer intValue) {
+            return intValue.longValue();
+        }
+        if (value instanceof Long longValue) {
+            return longValue;
+        }
+        throw new RuntimeException("Invalid userId in token");
     }
-    
+
     public String extractRole(String token) {
         return extractClaims(token).get("role", String.class);
     }
@@ -46,7 +50,7 @@ public class JwtUtil {
     }
 
     public boolean isTokenValid(String token, String username) {
-        final String extractedUsername = extractEmail(token);
+        String extractedUsername = extractEmail(token);
         return extractedUsername.equals(username) && !isTokenExpired(token);
     }
 

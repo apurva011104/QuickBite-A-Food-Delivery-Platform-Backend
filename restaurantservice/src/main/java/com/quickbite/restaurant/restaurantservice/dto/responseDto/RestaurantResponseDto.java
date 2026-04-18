@@ -8,17 +8,14 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class RestaurantResponseDto {
-    private Long restaurantId;
 
+    private Long restaurantId;
     private String name;
     private String description;
     private String cuisine;
-
     private String city;
-
     private Double avgRating;
-
     private boolean isOpen;
-
+    private boolean isApproved;
     private Integer estimatedDeliveryMin;
 }

@@ -2,9 +2,12 @@ package com.quickbite.restaurant.restaurantservice.service.serviceImpl;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
@@ -17,28 +20,34 @@ import com.quickbite.restaurant.restaurantservice.service.RestaurantService;
 @Service
 public class RestaurantServiceImpl implements RestaurantService {
 
-    @Autowired
-    private RestaurantRepository repository;
+    private static final Logger log = LoggerFactory.getLogger(RestaurantServiceImpl.class);
 
-    //-----------------Owner methods-----------------
+    private final RestaurantRepository repository;
+
+    public RestaurantServiceImpl(RestaurantRepository repository) {
+        this.repository = repository;
+    }
 
     @Override
+    @Transactional
     public RestaurantResponseDto registerRestaurant(RestaurantRequestDto request) {
-
         UserPrincipal user = getCurrentUser();
 
-        Restaurant r = RestaurantMapper.mapToEntity(request);
-        r.setOwnerId(user.getUserId());
-        r.setApproved(false);
-        r.setOpen(false);
+        Restaurant restaurant = RestaurantMapper.mapToEntity(request);
+        restaurant.setOwnerId(user.getUserId());
+        restaurant.setApproved(false);
+        restaurant.setOpen(false);
 
-        return RestaurantMapper.mapToDto(repository.save(r));
+        Restaurant saved = repository.save(restaurant);
+        log.info("Restaurant registered. restaurantId={} ownerId={}", saved.getRestaurantId(), user.getUserId());
+
+        return RestaurantMapper.mapToDto(saved);
     }
 
     @Override
     public List<RestaurantResponseDto> getByOwner() {
-
         UserPrincipal user = getCurrentUser();
+        log.debug("Fetching restaurants for ownerId={}", user.getUserId());
 
         return repository.findByOwnerId(user.getUserId())
                 .stream()
@@ -47,51 +56,60 @@ public class RestaurantServiceImpl implements RestaurantService {
     }
 
     @Override
+    @Transactional
     public RestaurantResponseDto updateRestaurant(Long id, RestaurantRequestDto request) {
-
         UserPrincipal user = getCurrentUser();
 
-        Restaurant r = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Unauthorized or not found"));
+        Restaurant restaurant = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
+                .orElseThrow(() -> new RuntimeException("Restaurant not found or access denied"));
 
-        updateEntity(r, request);
+        updateEntity(restaurant, request);
 
-        return RestaurantMapper.mapToDto(repository.save(r));
+        Restaurant updated = repository.save(restaurant);
+        log.info("Restaurant updated. restaurantId={} ownerId={}", id, user.getUserId());
+
+        return RestaurantMapper.mapToDto(updated);
     }
 
     @Override
+    @Transactional
     public RestaurantResponseDto toggleOpen(Long id) {
-
         UserPrincipal user = getCurrentUser();
 
-        Restaurant r = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Unauthorized or not found"));
+        Restaurant restaurant = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
+                .orElseThrow(() -> new RuntimeException("Restaurant not found or access denied"));
 
-        r.setOpen(!r.isOpen());
+        if (!restaurant.isApproved()) {
+            throw new RuntimeException("Restaurant is not approved yet");
+        }
 
-        return RestaurantMapper.mapToDto(repository.save(r));
+        restaurant.setOpen(!restaurant.isOpen());
+        Restaurant updated = repository.save(restaurant);
+
+        log.info("Restaurant open status changed. restaurantId={} ownerId={} isOpen={}",
+                id, user.getUserId(), updated.isOpen());
+
+        return RestaurantMapper.mapToDto(updated);
     }
 
     @Override
+    @Transactional
     public void deleteRestaurant(Long id) {
-
         UserPrincipal user = getCurrentUser();
 
-        Restaurant r = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Unauthorized or not found"));
+        Restaurant restaurant = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
+                .orElseThrow(() -> new RuntimeException("Restaurant not found or access denied"));
 
-        repository.delete(r);
+        repository.delete(restaurant);
+        log.info("Restaurant deleted. restaurantId={} ownerId={}", id, user.getUserId());
     }
-
-    //-----------------Public methods-----------------
 
     @Override
     public RestaurantResponseDto getById(Long id) {
-
-        Restaurant r = repository.findByRestaurantIdAndIsApprovedTrue(id)
+        Restaurant restaurant = repository.findByRestaurantIdAndIsApprovedTrue(id)
                 .orElseThrow(() -> new RuntimeException("Restaurant not found"));
 
-        return RestaurantMapper.mapToDto(r);
+        return RestaurantMapper.mapToDto(restaurant);
     }
 
     @Override
@@ -120,79 +138,91 @@ public class RestaurantServiceImpl implements RestaurantService {
 
     @Override
     public List<RestaurantResponseDto> getNearby(Double lat, Double lng, Double radius) {
+        List<Restaurant> allApproved = repository.findByIsApprovedTrue();
 
-        List<Restaurant> all = repository.findByIsApprovedTrue();
-
-        return all.stream()
+        return allApproved.stream()
+                .filter(r -> r.getLatitude() != null && r.getLongitude() != null)
                 .filter(r -> distance(lat, lng, r.getLatitude(), r.getLongitude()) <= radius)
                 .map(RestaurantMapper::mapToDto)
                 .toList();
     }
 
-    //-----------------Admin methhods-----------------
-
     @Override
+    @Transactional
     public RestaurantResponseDto approveRestaurant(Long id) {
-
-        Restaurant r = repository.findById(id)
+        Restaurant restaurant = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Restaurant not found"));
 
-        r.setApproved(true);
+        restaurant.setApproved(true);
 
-        return RestaurantMapper.mapToDto(repository.save(r));
+        Restaurant updated = repository.save(restaurant);
+        log.info("Restaurant approved. restaurantId={}", id);
+
+        return RestaurantMapper.mapToDto(updated);
     }
-
-    //-----------------System methods-----------------
 
     @Override
+    @Transactional
     public RestaurantResponseDto updateRating(Long id, Double rating) {
+        if (rating == null || rating < 0 || rating > 5) {
+            throw new RuntimeException("Rating must be between 0 and 5");
+        }
 
-        Restaurant r = repository.findById(id)
+        Restaurant restaurant = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Restaurant not found"));
 
-        double newRating = (r.getAvgRating() + rating) / 2;
-        r.setAvgRating(newRating);
+        long currentCount = restaurant.getRatingCount() == null ? 0L : restaurant.getRatingCount();
+        double currentAverage = restaurant.getAvgRating() == null ? 0.0 : restaurant.getAvgRating();
 
-        return RestaurantMapper.mapToDto(repository.save(r));
+        double newAverage = ((currentAverage * currentCount) + rating) / (currentCount + 1);
+
+        restaurant.setRatingCount(currentCount + 1);
+        restaurant.setAvgRating(newAverage);
+
+        Restaurant updated = repository.save(restaurant);
+        log.info("Restaurant rating updated. restaurantId={} avgRating={} ratingCount={}",
+                id, updated.getAvgRating(), updated.getRatingCount());
+
+        return RestaurantMapper.mapToDto(updated);
     }
-
-    //-----------------Helper methods-----------------
 
     private UserPrincipal getCurrentUser() {
-        return (UserPrincipal) SecurityContextHolder
-                .getContext()
-                .getAuthentication()
-                .getPrincipal();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getPrincipal() == null) {
+            throw new RuntimeException("Unauthorized access");
+        }
+
+        return (UserPrincipal) authentication.getPrincipal();
     }
 
     private void updateEntity(Restaurant restaurant, RestaurantRequestDto dto) {
-
-        restaurant.setName(dto.getName());
-        restaurant.setDescription(dto.getDescription());
-        restaurant.setCuisine(dto.getCuisine());
-        restaurant.setAddress(dto.getAddress());
-        restaurant.setCity(dto.getCity());
-        restaurant.setLatitude(dto.getLatitude());
-        restaurant.setLongitude(dto.getLongitude());
-        restaurant.setPhone(dto.getPhone());
-        restaurant.setDeliveryRadius(dto.getDeliveryRadius());
-        restaurant.setMinOrderAmount(dto.getMinOrderAmount());
-        restaurant.setEstimatedDeliveryMin(dto.getEstimatedDeliveryMin());
+        if (dto.getName() != null) restaurant.setName(dto.getName());
+        if (dto.getDescription() != null) restaurant.setDescription(dto.getDescription());
+        if (dto.getCuisine() != null) restaurant.setCuisine(dto.getCuisine());
+        if (dto.getAddress() != null) restaurant.setAddress(dto.getAddress());
+        if (dto.getCity() != null) restaurant.setCity(dto.getCity());
+        if (dto.getLatitude() != null) restaurant.setLatitude(dto.getLatitude());
+        if (dto.getLongitude() != null) restaurant.setLongitude(dto.getLongitude());
+        if (dto.getPhone() != null) restaurant.setPhone(dto.getPhone());
+        if (dto.getDeliveryRadius() != null) restaurant.setDeliveryRadius(dto.getDeliveryRadius());
+        if (dto.getMinOrderAmount() != null) restaurant.setMinOrderAmount(dto.getMinOrderAmount());
+        if (dto.getEstimatedDeliveryMin() != null) restaurant.setEstimatedDeliveryMin(dto.getEstimatedDeliveryMin());
     }
 
     private double distance(double lat1, double lon1, double lat2, double lon2) {
-
-        final int R = 6371; //Earth radius in kilometers
+        final int radiusOfEarth = 6371;
 
         double latDistance = Math.toRadians(lat2 - lat1);
         double lonDistance = Math.toRadians(lon2 - lon1);
 
         double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                + Math.cos(Math.toRadians(lat1))
+                * Math.cos(Math.toRadians(lat2))
                 * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
 
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-        return R * c;
+        return radiusOfEarth * c;
     }
 }
