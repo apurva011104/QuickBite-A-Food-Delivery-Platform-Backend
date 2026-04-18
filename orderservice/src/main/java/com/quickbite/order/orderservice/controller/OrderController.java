@@ -16,7 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.quickbite.order.orderservice.dto.requestDto.OrderRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.OrderResponseDto;
 import com.quickbite.order.orderservice.entity.OrderStatus;
+import com.quickbite.order.orderservice.exception.UnauthorizedActionException;
 import com.quickbite.order.orderservice.service.OrderService;
+import com.quickbite.order.orderservice.util.JwtUtil;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -28,12 +30,19 @@ public class OrderController {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     //PLACE ORDER
     @PostMapping
     public ResponseEntity<OrderResponseDto> placeOrder( @Valid @RequestBody OrderRequestDto request,
                                 HttpServletRequest httpRequest) {
 
         String token = extractToken(httpRequest);
+        String role = jwtUtil.extractRole(token);
+        if (!"CUSTOMER".equals(role)) {
+            throw new UnauthorizedActionException("Only customers can place orders");
+        }
         return ResponseEntity.ok(orderService.placeOrder(request, token));
     }
 
@@ -48,6 +57,10 @@ public class OrderController {
     @GetMapping("/customer")
     public ResponseEntity<List<OrderResponseDto>> getOrdersByCustomer(HttpServletRequest httpRequest) {
         String token = extractToken(httpRequest);
+        String role = jwtUtil.extractRole(token);
+        if (!"CUSTOMER".equals(role)) {
+            throw new UnauthorizedActionException("Only customers can view customer orders");
+        }
         return ResponseEntity.ok(orderService.getOrdersByCustomer(token));
     }
 
@@ -89,7 +102,10 @@ public class OrderController {
             HttpServletRequest httpRequest) {
 
         String token = extractToken(httpRequest);
-
+        String role = jwtUtil.extractRole(token);
+        if (!"CUSTOMER".equals(role)) {
+            throw new UnauthorizedActionException("Only customers can cancel orders");
+        }
         return ResponseEntity.ok(orderService.cancelOrder(orderId, token));
     }
 
@@ -99,7 +115,10 @@ public class OrderController {
                                      HttpServletRequest httpRequest) {
 
         String token = extractToken(httpRequest);
-
+        String role = jwtUtil.extractRole(token);
+        if (!"CUSTOMER".equals(role)) {
+            throw new UnauthorizedActionException("Only customers can reorder");
+        }
         return ResponseEntity.ok(orderService.reorderFromHistory(orderId, token));
     }
 
