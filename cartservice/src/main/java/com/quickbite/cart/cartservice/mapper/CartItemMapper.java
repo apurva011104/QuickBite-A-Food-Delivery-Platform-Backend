@@ -7,12 +7,11 @@ import com.quickbite.cart.cartservice.entity.CartItem;
 public class CartItemMapper {
     
     public static CartItem dtoToEntity(CartItemRequestDto dto, Long cartId){
-        return new CartItem(cartId, 
-                            dto.getMenuItemId(),
-                            dto.getName(), 
-                            dto.getQuantity(), 
-                            dto.getPrice(),
-                            dto.getCustomization());
+        CartItem item = new CartItem();
+        item.setCartId(cartId);
+        item.setMenuItemId(dto.getMenuItemId());
+        item.setQuantity(dto.getQuantity());
+        return item;
     }
 
     public static CartItemResponseDto entityToDto(CartItem item){

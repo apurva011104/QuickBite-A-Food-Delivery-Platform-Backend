@@ -9,11 +9,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CartRequestDto {
-    
-    @NotNull
-    private Long customerId;
 
     @NotNull
     private Long restaurantId;
-    
 }
