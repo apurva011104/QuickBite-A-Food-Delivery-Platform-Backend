@@ -32,40 +32,41 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        log.debug("JWT filter triggered for path: {}", path);
-
         String header = request.getHeader("Authorization");
 
-        String token = null;
-        String email = null;
-        String role = null;
-
-        if (header != null && header.startsWith("Bearer ")) {
-            token = header.substring(7);
-
-            try {
-                email = jwtUtil.extractEmail(token);
-                role = jwtUtil.extractRole(token);
-                log.debug("Token extracted successfully for email: {} with role: {}", email, role);
-            } catch (Exception e) {
-                log.warn("Invalid JWT token for path: {}", path);
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                return;
-            }
+        if (header == null || !header.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            if (jwtUtil.isTokenValid(token, email)) {
+        String token = header.substring(7);
+
+        try {
+            String email = jwtUtil.extractEmail(token);
+            String role = jwtUtil.extractRole(token);
+            Long userId = jwtUtil.extractUserId(token);
+
+            if (email != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null
+                    && jwtUtil.isTokenValid(token, email)) {
+
+                UserPrincipal principal = new UserPrincipal(userId, email, role);
+
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
-                                email,
+                                principal,
                                 null,
                                 List.of(new SimpleGrantedAuthority("ROLE_" + role))
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
-                log.debug("User authenticated successfully: {}", email);
+                log.debug("Authenticated delivery-service request path={} userId={} role={}", path, userId, role);
             }
+        } catch (Exception ex) {
+            log.warn("Invalid JWT token for path={} message={}", path, ex.getMessage());
+            SecurityContextHolder.clearContext();
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);

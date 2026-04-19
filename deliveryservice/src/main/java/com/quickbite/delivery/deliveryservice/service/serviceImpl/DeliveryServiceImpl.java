@@ -18,13 +18,18 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequest
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
+import com.quickbite.delivery.deliveryservice.entity.ActiveDelivery;
 import com.quickbite.delivery.deliveryservice.entity.DeliveryAgent;
+import com.quickbite.delivery.deliveryservice.entity.DeliveryStatus;
 import com.quickbite.delivery.deliveryservice.exception.AgentNotAvailableException;
 import com.quickbite.delivery.deliveryservice.exception.AgentNotVerifiedException;
 import com.quickbite.delivery.deliveryservice.exception.BadRequestException;
 import com.quickbite.delivery.deliveryservice.exception.ResourceNotFoundException;
+import com.quickbite.delivery.deliveryservice.exception.UnauthorizedActionException;
 import com.quickbite.delivery.deliveryservice.mapper.DeliveryAgentMapper;
+import com.quickbite.delivery.deliveryservice.repository.ActiveDeliveryRepository;
 import com.quickbite.delivery.deliveryservice.repository.DeliveryRepository;
+import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
 
 import lombok.RequiredArgsConstructor;
@@ -37,97 +42,74 @@ import lombok.extern.slf4j.Slf4j;
 public class DeliveryServiceImpl implements DeliveryService {
 
     private final DeliveryRepository deliveryRepository;
+    private final ActiveDeliveryRepository activeDeliveryRepository;
     private final DeliveryAgentMapper deliveryAgentMapper;
 
     @Override
-    public DeliveryAgentResponseDto registerAgent(DeliveryAgentRequestDto requestDto) {
-        log.info("Registering delivery agent for userId: {}", requestDto.getUserId());
+    public DeliveryAgentResponseDto registerAgent(UserPrincipal currentUser, DeliveryAgentRequestDto requestDto) {
+        log.info("Registering delivery agent for userId={}", currentUser.getUserId());
 
-        if (deliveryRepository.existsByUserId(requestDto.getUserId())) {
-            log.warn("Registration failed. Agent already exists for userId: {}", requestDto.getUserId());
+        if (deliveryRepository.existsByUserId(currentUser.getUserId())) {
             throw new BadRequestException("Agent already registered for this user ID");
         }
 
         if (deliveryRepository.existsByPhone(requestDto.getPhone())) {
-            log.warn("Registration failed. Phone already in use: {}", requestDto.getPhone());
             throw new BadRequestException("Phone number already in use");
         }
 
         if (deliveryRepository.existsByVehicleNumber(requestDto.getVehicleNumber())) {
-            log.warn("Registration failed. Vehicle number already in use: {}", requestDto.getVehicleNumber());
             throw new BadRequestException("Vehicle number already in use");
         }
 
         DeliveryAgent agent = deliveryAgentMapper.toEntity(requestDto);
+        agent.setUserId(currentUser.getUserId());
+        agent.setAvailable(false);
+        agent.setVerified(false);
+
         DeliveryAgent savedAgent = deliveryRepository.save(agent);
 
-        log.info("Delivery agent registered successfully with agentId: {}", savedAgent.getAgentId());
+        log.info("Delivery agent registered successfully with agentId={}", savedAgent.getAgentId());
         return deliveryAgentMapper.toResponseDto(savedAgent);
     }
 
     @Override
     @Transactional(readOnly = true)
     public DeliveryAgentResponseDto getAgentById(Long agentId) {
-        log.info("Fetching delivery agent by agentId: {}", agentId);
-
         DeliveryAgent agent = deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
-
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
         return deliveryAgentMapper.toResponseDto(agent);
     }
 
     @Override
     @Transactional(readOnly = true)
     public DeliveryAgentResponseDto getAgentByUserId(Long userId) {
-        log.info("Fetching delivery agent by userId: {}", userId);
-
         DeliveryAgent agent = deliveryRepository.findByUserId(userId)
-                .orElseThrow(() -> {
-                    log.warn("Agent not found with userId: {}", userId);
-                    return new ResourceNotFoundException("Agent not found with user ID: " + userId);
-                });
-
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found with user ID: " + userId));
         return deliveryAgentMapper.toResponseDto(agent);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryAgentResponseDto> getAllAvailableAgents() {
-        log.info("Fetching all available delivery agents");
-
-        List<DeliveryAgentResponseDto> agents = deliveryRepository.findByAvailableTrue()
+        return deliveryRepository.findByAvailableTrue()
                 .stream()
                 .map(deliveryAgentMapper::toResponseDto)
                 .toList();
-
-        log.info("Found {} available delivery agents", agents.size());
-        return agents;
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryAgentResponseDto> getAllVerifiedAgents() {
-        log.info("Fetching all verified delivery agents");
-
-        List<DeliveryAgentResponseDto> agents = deliveryRepository.findByVerifiedTrue()
+        return deliveryRepository.findByVerifiedTrue()
                 .stream()
                 .map(deliveryAgentMapper::toResponseDto)
                 .toList();
-
-        log.info("Found {} verified delivery agents", agents.size());
-        return agents;
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryAgentResponseDto> getNearbyAgents(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm) {
-        log.info("Finding nearby agents for latitude: {}, longitude: {}, radiusKm: {}", latitude, longitude, radiusKm);
-
         if (latitude == null || longitude == null || radiusKm == null) {
-            log.warn("Nearby agent search failed due to missing latitude/longitude/radius");
             throw new BadRequestException("Latitude, longitude, and radius are required");
         }
 
@@ -151,60 +133,50 @@ public class DeliveryServiceImpl implements DeliveryService {
             }
         }
 
-        log.info("Found {} nearby agents within {} km", nearbyAgents.size(), radiusKm);
         return nearbyAgents;
     }
 
     @Override
-    public MessageResponseDto updateLocation(Long agentId, LocationUpdateRequestDto requestDto) {
-        log.info("Updating location for agentId: {}", agentId);
-
-        DeliveryAgent agent = deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Location update failed. Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
+    public MessageResponseDto updateLocation(Long agentId, UserPrincipal currentUser, LocationUpdateRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(agentId);
+        validateAgentOwnership(agent, currentUser);
 
         agent.setCurrentLatitude(requestDto.getCurrentLatitude());
         agent.setCurrentLongitude(requestDto.getCurrentLongitude());
 
         deliveryRepository.save(agent);
 
-        log.info("Location updated successfully for agentId: {}", agentId);
+        log.info("Location updated for agentId={}", agentId);
         return new MessageResponseDto("Agent location updated successfully");
     }
 
     @Override
-    public MessageResponseDto setAvailability(Long agentId, AvailabilityUpdateRequestDto requestDto) {
-        log.info("Updating availability for agentId: {} to {}", agentId, requestDto.getAvailable());
-
-        DeliveryAgent agent = deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Availability update failed. Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
+    public MessageResponseDto setAvailability(Long agentId, UserPrincipal currentUser, AvailabilityUpdateRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(agentId);
+        validateAgentOwnership(agent, currentUser);
 
         if (!agent.isVerified() && Boolean.TRUE.equals(requestDto.getAvailable())) {
-            log.warn("Unverified agent cannot be marked available. agentId: {}", agentId);
             throw new AgentNotVerifiedException("Unverified agent cannot be set as available");
+        }
+
+        boolean hasActiveAssignments = !activeDeliveryRepository
+                .findByAgentIdAndStatusNot(agentId, DeliveryStatus.DELIVERED)
+                .isEmpty();
+
+        if (hasActiveAssignments && Boolean.FALSE.equals(requestDto.getAvailable())) {
+            throw new BadRequestException("Agent cannot go offline with active deliveries");
         }
 
         agent.setAvailable(requestDto.getAvailable());
         deliveryRepository.save(agent);
 
-        log.info("Availability updated successfully for agentId: {}", agentId);
+        log.info("Availability updated for agentId={} available={}", agentId, requestDto.getAvailable());
         return new MessageResponseDto("Agent availability updated successfully");
     }
 
     @Override
     public MessageResponseDto verifyAgent(Long agentId, VerificationRequestDto requestDto) {
-        log.info("Updating verification for agentId: {} to {}", agentId, requestDto.getVerified());
-
-        DeliveryAgent agent = deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Verification failed. Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
+        DeliveryAgent agent = getAgentOrThrow(agentId);
 
         agent.setVerified(requestDto.getVerified());
 
@@ -214,80 +186,89 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         deliveryRepository.save(agent);
 
-        log.info("Verification updated successfully for agentId: {}", agentId);
+        log.info("Verification updated for agentId={} verified={}", agentId, requestDto.getVerified());
         return new MessageResponseDto("Agent verification status updated successfully");
     }
 
     @Override
     public MessageResponseDto updateRating(Long agentId, RatingUpdateRequestDto requestDto) {
-        log.info("Updating rating for agentId: {} with new rating: {}", agentId, requestDto.getNewRating());
+        DeliveryAgent agent = getAgentOrThrow(agentId);
 
-        DeliveryAgent agent = deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Rating update failed. Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
+        BigDecimal currentAvg = agent.getAvgRating() == null ? BigDecimal.ZERO : agent.getAvgRating();
+        int ratingCount = agent.getRatingCount() == null ? 0 : agent.getRatingCount();
 
-        BigDecimal currentAvg = agent.getAvgRating();
-        int totalDeliveries = agent.getTotalDeliveries();
+        BigDecimal totalRatingSum = currentAvg.multiply(BigDecimal.valueOf(ratingCount))
+                .add(BigDecimal.valueOf(requestDto.getNewRating()));
 
-        BigDecimal totalRatingSum = currentAvg.multiply(BigDecimal.valueOf(totalDeliveries));
-        totalRatingSum = totalRatingSum.add(BigDecimal.valueOf(requestDto.getNewRating()));
+        int updatedRatingCount = ratingCount + 1;
+        BigDecimal updatedAvg = totalRatingSum.divide(
+                BigDecimal.valueOf(updatedRatingCount),
+                2,
+                RoundingMode.HALF_UP
+        );
 
-        int updatedDeliveries = totalDeliveries + 1;
-        BigDecimal updatedAvg = totalRatingSum.divide(BigDecimal.valueOf(updatedDeliveries), 2, RoundingMode.HALF_UP);
-
-        agent.setTotalDeliveries(updatedDeliveries);
+        agent.setRatingCount(updatedRatingCount);
         agent.setAvgRating(updatedAvg);
 
         deliveryRepository.save(agent);
 
-        log.info("Rating updated successfully for agentId: {}. New avgRating: {}", agentId, updatedAvg);
+        log.info("Rating updated for agentId={} avgRating={} ratingCount={}", agentId, updatedAvg, updatedRatingCount);
         return new MessageResponseDto("Agent rating updated successfully");
     }
 
     @Override
     public MessageResponseDto assignOrder(AssignOrderRequestDto requestDto) {
-        log.info("Assigning orderId: {} to agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
-
-        DeliveryAgent agent = deliveryRepository.findByAgentId(requestDto.getAgentId())
-                .orElseThrow(() -> {
-                    log.warn("Order assignment failed. Agent not found with agentId: {}", requestDto.getAgentId());
-                    return new ResourceNotFoundException("Agent not found with ID: " + requestDto.getAgentId());
-                });
+        DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
 
         if (!agent.isVerified()) {
-            log.warn("Order assignment failed. Agent not verified. agentId: {}", requestDto.getAgentId());
             throw new AgentNotVerifiedException("Agent is not verified");
         }
 
         if (!agent.isAvailable()) {
-            log.warn("Order assignment failed. Agent not available. agentId: {}", requestDto.getAgentId());
             throw new AgentNotAvailableException("Agent is not available");
         }
 
-        log.info("Order {} assigned successfully to agent {}", requestDto.getOrderId(), requestDto.getAgentId());
+        if (activeDeliveryRepository.existsByOrderId(requestDto.getOrderId())) {
+            throw new BadRequestException("Order is already assigned");
+        }
+
+        ActiveDelivery activeDelivery = new ActiveDelivery(
+                requestDto.getOrderId(),
+                requestDto.getAgentId(),
+                DeliveryStatus.ASSIGNED
+        );
+
+        activeDeliveryRepository.save(activeDelivery);
+
+        agent.setAvailable(false);
+        deliveryRepository.save(agent);
+
+        log.info("Order {} assigned to agent {}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
                 "Order " + requestDto.getOrderId() + " assigned to agent " + requestDto.getAgentId() + " successfully"
         );
     }
 
     @Override
-    public MessageResponseDto completeDelivery(CompleteDeliveryRequestDto requestDto) {
-        log.info("Completing delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
+    public MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        validateAgentOwnership(agent, currentUser);
 
-        DeliveryAgent agent = deliveryRepository.findByAgentId(requestDto.getAgentId())
-                .orElseThrow(() -> {
-                    log.warn("Complete delivery failed. Agent not found with agentId: {}", requestDto.getAgentId());
-                    return new ResourceNotFoundException("Agent not found with ID: " + requestDto.getAgentId());
-                });
+        ActiveDelivery activeDelivery = activeDeliveryRepository.findByOrderId(requestDto.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Active delivery not found for order ID: " + requestDto.getOrderId()));
 
-        if (!agent.isVerified()) {
-            log.warn("Complete delivery failed. Agent not verified. agentId: {}", requestDto.getAgentId());
-            throw new AgentNotVerifiedException("Agent is not verified");
+        if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
+            throw new UnauthorizedActionException("This order is not assigned to the given agent");
         }
 
-        log.info("Delivery completed for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
+        activeDelivery.setStatus(DeliveryStatus.DELIVERED);
+        activeDeliveryRepository.save(activeDelivery);
+
+        agent.setAvailable(true);
+        agent.setTotalDeliveries(agent.getTotalDeliveries() + 1);
+        deliveryRepository.save(agent);
+
+        log.info("Delivery completed for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
                 "Order " + requestDto.getOrderId() + " marked as delivered by agent " + requestDto.getAgentId()
         );
@@ -295,17 +276,32 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId) {
-        log.info("Fetching active deliveries for agentId: {}", agentId);
+    public List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId, UserPrincipal currentUser) {
+        DeliveryAgent agent = getAgentOrThrow(agentId);
 
-        deliveryRepository.findByAgentId(agentId)
-                .orElseThrow(() -> {
-                    log.warn("Active deliveries fetch failed. Agent not found with agentId: {}", agentId);
-                    return new ResourceNotFoundException("Agent not found with ID: " + agentId);
-                });
+        if ("AGENT".equals(currentUser.getRole())) {
+            validateAgentOwnership(agent, currentUser);
+        }
 
-        log.info("Returning active deliveries for agentId: {}", agentId);
-        return List.of();
+        return activeDeliveryRepository.findByAgentIdAndStatusNot(agentId, DeliveryStatus.DELIVERED)
+                .stream()
+                .map(delivery -> new ActiveDeliveryResponseDto(
+                        delivery.getOrderId(),
+                        delivery.getAgentId(),
+                        delivery.getStatus().name()
+                ))
+                .toList();
+    }
+
+    private DeliveryAgent getAgentOrThrow(Long agentId) {
+        return deliveryRepository.findByAgentId(agentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
+    }
+
+    private void validateAgentOwnership(DeliveryAgent agent, UserPrincipal currentUser) {
+        if (!agent.getUserId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to perform this action");
+        }
     }
 
     private double haversineDistance(double lat1, double lon1, double lat2, double lon2) {

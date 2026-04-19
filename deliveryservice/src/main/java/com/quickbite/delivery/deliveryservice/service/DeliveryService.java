@@ -13,10 +13,11 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequest
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
+import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
 
 public interface DeliveryService {
 
-    DeliveryAgentResponseDto registerAgent(DeliveryAgentRequestDto requestDto);
+    DeliveryAgentResponseDto registerAgent(UserPrincipal currentUser, DeliveryAgentRequestDto requestDto);
 
     DeliveryAgentResponseDto getAgentById(Long agentId);
 
@@ -28,9 +29,9 @@ public interface DeliveryService {
 
     List<DeliveryAgentResponseDto> getNearbyAgents(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm);
 
-    MessageResponseDto updateLocation(Long agentId, LocationUpdateRequestDto requestDto);
+    MessageResponseDto updateLocation(Long agentId, UserPrincipal currentUser, LocationUpdateRequestDto requestDto);
 
-    MessageResponseDto setAvailability(Long agentId, AvailabilityUpdateRequestDto requestDto);
+    MessageResponseDto setAvailability(Long agentId, UserPrincipal currentUser, AvailabilityUpdateRequestDto requestDto);
 
     MessageResponseDto verifyAgent(Long agentId, VerificationRequestDto requestDto);
 
@@ -38,7 +39,7 @@ public interface DeliveryService {
 
     MessageResponseDto assignOrder(AssignOrderRequestDto requestDto);
 
-    MessageResponseDto completeDelivery(CompleteDeliveryRequestDto requestDto);
+    MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto);
 
-    List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId);
+    List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId, UserPrincipal currentUser);
 }

@@ -9,9 +9,6 @@ import lombok.Data;
 @Data
 public class DeliveryAgentRequestDto {
 
-    @NotNull(message = "User ID is required")
-    private Long userId;
-
     @NotBlank(message = "Full name is required")
     private String fullName;
 

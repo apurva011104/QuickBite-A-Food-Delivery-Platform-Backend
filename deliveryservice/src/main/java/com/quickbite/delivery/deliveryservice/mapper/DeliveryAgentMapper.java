@@ -15,7 +15,6 @@ public class DeliveryAgentMapper {
         }
 
         DeliveryAgent agent = new DeliveryAgent();
-        agent.setUserId(dto.getUserId());
         agent.setFullName(dto.getFullName());
         agent.setPhone(dto.getPhone());
         agent.setVehicleType(dto.getVehicleType());

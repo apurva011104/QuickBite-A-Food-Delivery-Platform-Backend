@@ -5,26 +5,13 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import com.quickbite.delivery.deliveryservice.dto.requestDto.AssignOrderRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.AvailabilityUpdateRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.DeliveryAgentRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.LocationUpdateRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
-import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
-import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
-import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
+import com.quickbite.delivery.deliveryservice.dto.requestDto.*;
+import com.quickbite.delivery.deliveryservice.dto.responseDto.*;
+import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
 
 import jakarta.validation.Valid;
@@ -42,9 +29,11 @@ public class DeliveryController {
 
     @PostMapping("/register")
     public ResponseEntity<DeliveryAgentResponseDto> registerAgent(
-            @Valid @RequestBody DeliveryAgentRequestDto requestDto) {
-        log.info("API HIT - Register agent for userId: {}", requestDto.getUserId());
-        return new ResponseEntity<>(deliveryService.registerAgent(requestDto), HttpStatus.CREATED);
+            @Valid @RequestBody DeliveryAgentRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Register agent for userId: {}", currentUser.getUserId());
+        return new ResponseEntity<>(deliveryService.registerAgent(currentUser, requestDto), HttpStatus.CREATED);
     }
 
     @GetMapping("/{agentId}")
@@ -83,17 +72,21 @@ public class DeliveryController {
     @PutMapping("/{agentId}/location")
     public ResponseEntity<MessageResponseDto> updateLocation(
             @PathVariable Long agentId,
-            @Valid @RequestBody LocationUpdateRequestDto requestDto) {
+            @Valid @RequestBody LocationUpdateRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Update location for agentId: {}", agentId);
-        return ResponseEntity.ok(deliveryService.updateLocation(agentId, requestDto));
+        return ResponseEntity.ok(deliveryService.updateLocation(agentId, currentUser, requestDto));
     }
 
     @PutMapping("/{agentId}/availability")
     public ResponseEntity<MessageResponseDto> setAvailability(
             @PathVariable Long agentId,
-            @Valid @RequestBody AvailabilityUpdateRequestDto requestDto) {
+            @Valid @RequestBody AvailabilityUpdateRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Update availability for agentId: {}", agentId);
-        return ResponseEntity.ok(deliveryService.setAvailability(agentId, requestDto));
+        return ResponseEntity.ok(deliveryService.setAvailability(agentId, currentUser, requestDto));
     }
 
     @PutMapping("/{agentId}/verify")
@@ -121,14 +114,18 @@ public class DeliveryController {
 
     @PostMapping("/complete-delivery")
     public ResponseEntity<MessageResponseDto> completeDelivery(
-            @Valid @RequestBody CompleteDeliveryRequestDto requestDto) {
+            @Valid @RequestBody CompleteDeliveryRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Complete delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
-        return ResponseEntity.ok(deliveryService.completeDelivery(requestDto));
+        return ResponseEntity.ok(deliveryService.completeDelivery(currentUser, requestDto));
     }
 
     @GetMapping("/{agentId}/active-deliveries")
-    public ResponseEntity<List<ActiveDeliveryResponseDto>> getActiveDeliveries(@PathVariable Long agentId) {
+    public ResponseEntity<List<ActiveDeliveryResponseDto>> getActiveDeliveries(@PathVariable Long agentId,
+                                                                               Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Get active deliveries for agentId: {}", agentId);
-        return ResponseEntity.ok(deliveryService.getActiveDeliveries(agentId));
+        return ResponseEntity.ok(deliveryService.getActiveDeliveries(agentId, currentUser));
     }
 }
