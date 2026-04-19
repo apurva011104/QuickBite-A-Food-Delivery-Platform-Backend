@@ -25,7 +25,7 @@ public interface OrderService {
 
     OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser, String token);
 
-    OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser);
+    OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser, String token);
 
     Long getOrderCountByRestaurant(Long restaurantId);
 }
