@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import com.quickbite.order.orderservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentResponseDto;
 
-@FeignClient(name = "PAYMENT-SERVICE", url = "http://localhost:8085")
+@FeignClient(name = "PAYMENT-SERVICE")
 public interface PaymentClient {
 
     @PostMapping("/payments")
