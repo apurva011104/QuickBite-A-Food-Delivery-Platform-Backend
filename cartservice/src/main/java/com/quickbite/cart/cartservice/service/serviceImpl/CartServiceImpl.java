@@ -4,8 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,22 +22,22 @@ import com.quickbite.cart.cartservice.repository.CartItemRepository;
 import com.quickbite.cart.cartservice.repository.CartRepository;
 import com.quickbite.cart.cartservice.service.CartService;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class CartServiceImpl implements CartService {
 
-    private static final Logger log = LoggerFactory.getLogger(CartServiceImpl.class);
+    @Autowired
+    private CartRepository cartRepository;
 
-    private final CartRepository cartRepository;
-    private final CartItemRepository cartItemRepository;
-    private final MenuClient menuClient;
+    @Autowired
+    private CartItemRepository cartItemRepository;
 
-    public CartServiceImpl(CartRepository cartRepository,
-                           CartItemRepository cartItemRepository,
-                           MenuClient menuClient) {
-        this.cartRepository = cartRepository;
-        this.cartItemRepository = cartItemRepository;
-        this.menuClient = menuClient;
-    }
+    @Autowired
+    private MenuClient menuClient;
 
     @Override
     public CartResponseDto getCartByCustomerId(Long customerId) {
@@ -77,7 +76,7 @@ public class CartServiceImpl implements CartService {
         if (cart.getRestaurantId() != null
                 && cart.getRestaurantId() != 0L
                 && !cart.getRestaurantId().equals(menuItem.getRestaurantId())) {
-            log.warn("Customer tried adding item from another restaurant. customerId={} oldRestaurantId={} newRestaurantId={}",
+            log.warn("Restaurant mismatch. Clearing cart for customerId={} oldRestaurantId={} newRestaurantId={}",
                     customerId, cart.getRestaurantId(), menuItem.getRestaurantId());
 
             cartItemRepository.deleteByCartId(cart.getCartId());
@@ -103,7 +102,7 @@ public class CartServiceImpl implements CartService {
             CartItem item = existingItem.get();
             item.setQuantity(item.getQuantity() + dto.getQuantity());
             cartItemRepository.save(item);
-            log.info("Updated cart quantity for menuItemId={} customerId={}", dto.getMenuItemId(), customerId);
+            log.info("Updated quantity for existing menuItemId={} customerId={}", dto.getMenuItemId(), customerId);
         } else {
             CartItem newItem = new CartItem(
                     cart.getCartId(),
@@ -196,7 +195,6 @@ public class CartServiceImpl implements CartService {
         cartRepository.save(cart);
 
         log.info("Changed cart restaurant for customerId={} restaurantId={}", customerId, dto.getRestaurantId());
-
         return getCartByCustomerId(customerId);
     }
 
