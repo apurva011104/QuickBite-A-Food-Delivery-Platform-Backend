@@ -4,144 +4,154 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.quickbite.order.orderservice.dto.requestDto.OrderItemRequestDto;
 import com.quickbite.order.orderservice.dto.requestDto.OrderRequestDto;
 import com.quickbite.order.orderservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.OrderResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentStatus;
 import com.quickbite.order.orderservice.entity.Order;
-import com.quickbite.order.orderservice.entity.OrderItem;
 import com.quickbite.order.orderservice.entity.OrderStatus;
+import com.quickbite.order.orderservice.entity.PaymentMode;
+import com.quickbite.order.orderservice.exception.EmptyOrderException;
+import com.quickbite.order.orderservice.exception.InvalidOrderStateException;
 import com.quickbite.order.orderservice.exception.OrderNotFoundException;
 import com.quickbite.order.orderservice.exception.UnauthorizedActionException;
 import com.quickbite.order.orderservice.external.payment.client.PaymentClient;
 import com.quickbite.order.orderservice.mapper.OrderMapper;
 import com.quickbite.order.orderservice.repository.OrderRepository;
+import com.quickbite.order.orderservice.security.UserPrincipal;
 import com.quickbite.order.orderservice.service.OrderService;
-import com.quickbite.order.orderservice.util.JwtUtil;
 
-import lombok.extern.slf4j.Slf4j;
-
-@Slf4j
 @Service
 public class OrderServiceImpl implements OrderService {
 
-    @Autowired
-    private OrderRepository orderRepository;
+    private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
 
-    @Autowired
-    private JwtUtil jwtUtil;
+    private final OrderRepository orderRepository;
+    private final PaymentClient paymentClient;
 
-    @Autowired
-    private PaymentClient paymentClient;
+    public OrderServiceImpl(OrderRepository orderRepository,
+                            PaymentClient paymentClient) {
+        this.orderRepository = orderRepository;
+        this.paymentClient = paymentClient;
+    }
 
-    //PLACE ORDER
     @Override
-    public OrderResponseDto placeOrder(OrderRequestDto request, String token) {
+    @Transactional
+    public OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new EmptyOrderException("Order must contain at least one item");
+        }
 
-        Long customerId = jwtUtil.extractUserId(token);
-        log.info("Placing order for customerId={}", customerId);
+        Long customerId = currentUser.getUserId();
+        log.info("Placing order for customerId={} restaurantId={}", customerId, request.getRestaurantId());
 
         Order order = OrderMapper.dtoToEntity(request);
-
         order.setCustomerId(customerId);
         order.setOrderStatus(OrderStatus.PLACED);
         order.setOrderDate(LocalDateTime.now());
         order.setEstimatedDelivery(LocalDateTime.now().plusMinutes(30));
 
-        // Calculate total
         BigDecimal totalAmount = order.getItems().stream()
                 .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         order.setTotalAmount(totalAmount);
 
-        // Discount handling
-        BigDecimal discount = order.getDiscount() != null ? order.getDiscount() : BigDecimal.ZERO;
+        BigDecimal discount = request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO;
+        if (discount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new InvalidOrderStateException("Discount cannot be negative");
+        }
 
         BigDecimal finalAmount = totalAmount.subtract(discount);
-
         if (finalAmount.compareTo(BigDecimal.ZERO) < 0) {
             finalAmount = BigDecimal.ZERO;
         }
 
+        order.setDiscount(discount);
         order.setFinalAmount(finalAmount);
 
-        // Save order
         Order savedOrder = orderRepository.save(order);
-        log.info("Order created with orderId={}", savedOrder.getOrderId());
+        log.info("Order created orderId={} status={}", savedOrder.getOrderId(), savedOrder.getOrderStatus());
 
-        // Prepare payment request
         PaymentRequestDto paymentRequest = new PaymentRequestDto();
         paymentRequest.setOrderId(savedOrder.getOrderId());
         paymentRequest.setAmount(savedOrder.getFinalAmount());
         paymentRequest.setMode(savedOrder.getPaymentMode());
 
         try {
-            log.info("Calling payment service for orderId={}", savedOrder.getOrderId());
+            PaymentResponseDto paymentResponse = paymentClient.processPayment(
+                    paymentRequest,
+                    "Bearer dummy" // replace with forwarded token once Feign interceptor/header forwarding is added
+            );
 
-            PaymentResponseDto paymentResponse =
-                    paymentClient.processPayment(paymentRequest, token);
-
-            if (paymentResponse != null && paymentResponse.getStatus() == PaymentStatus.PAID) {
-                savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
-                log.info("Payment successful for orderId={}", savedOrder.getOrderId());
+            if (paymentResponse != null) {
+                if (savedOrder.getPaymentMode() == PaymentMode.COD
+                        && paymentResponse.getStatus() == PaymentStatus.PENDING) {
+                    savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
+                    log.info("COD order confirmed orderId={}", savedOrder.getOrderId());
+                } else if (paymentResponse.getStatus() == PaymentStatus.PAID) {
+                    savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
+                    log.info("Online payment successful orderId={}", savedOrder.getOrderId());
+                } else {
+                    savedOrder.setOrderStatus(OrderStatus.CANCELLED);
+                    log.warn("Payment failed/pending for non-COD orderId={}", savedOrder.getOrderId());
+                }
             } else {
                 savedOrder.setOrderStatus(OrderStatus.CANCELLED);
-                log.warn("Payment failed or pending for orderId={}", savedOrder.getOrderId());
+                log.warn("Payment service returned null for orderId={}", savedOrder.getOrderId());
             }
-
-        } catch (Exception e) {
-            log.error("Payment service error for orderId={}", savedOrder.getOrderId(), e);
+        } catch (Exception ex) {
             savedOrder.setOrderStatus(OrderStatus.CANCELLED);
+            log.error("Payment service call failed for orderId={}", savedOrder.getOrderId(), ex);
         }
 
-        orderRepository.save(savedOrder);
-
-        log.info("Final order status for orderId={} is {}", 
-                savedOrder.getOrderId(), savedOrder.getOrderStatus());
-
-        return OrderMapper.entityToDto(savedOrder);
+        Order updated = orderRepository.save(savedOrder);
+        return OrderMapper.entityToDto(updated);
     }
 
-    //GET ORDER BY ID
     @Override
-    public OrderResponseDto getOrderById(Long orderId) {
+    public OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: "+orderId));
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
+
+        if ("CUSTOMER".equals(currentUser.getRole()) && !order.getCustomerId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to view this order");
+        }
+
+        if ("AGENT".equals(currentUser.getRole())
+                && order.getDeliveryAgentId() != null
+                && !order.getDeliveryAgentId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to view this order");
+        }
 
         return OrderMapper.entityToDto(order);
     }
 
-    //GET ORDERS BY CUSTOMER
     @Override
-    public List<OrderResponseDto> getOrdersByCustomer(String token) {
-
-        Long customerId = jwtUtil.extractUserId(token);
-
+    public List<OrderResponseDto> getOrdersByCustomer(Long customerId) {
         return orderRepository.findByCustomerIdOrderByOrderDateDesc(customerId)
                 .stream()
                 .map(OrderMapper::entityToDto)
                 .toList();
     }
 
-    //GET ORDERS BY RESTAURANT
     @Override
     public List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId) {
-
         return orderRepository.findByRestaurantIdOrderByOrderDateDesc(restaurantId)
                 .stream()
                 .map(OrderMapper::entityToDto)
                 .toList();
     }
 
-    //GET ACTIVE ORDERS
     @Override
     public List<OrderResponseDto> getActiveOrders() {
-
         List<OrderStatus> activeStatuses = List.of(
                 OrderStatus.PLACED,
                 OrderStatus.CONFIRMED,
@@ -155,95 +165,121 @@ public class OrderServiceImpl implements OrderService {
                 .toList();
     }
 
-    //UPDATE ORDER STATUS
     @Override
-    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus status) {
-
+    @Transactional
+    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus newStatus) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
-        order.setOrderStatus(status);
+        validateStatusTransition(order.getOrderStatus(), newStatus);
 
-        return OrderMapper.entityToDto(orderRepository.save(order));
+        order.setOrderStatus(newStatus);
+        Order updated = orderRepository.save(order);
+
+        log.info("Order status updated orderId={} from={} to={}",
+                orderId, order.getOrderStatus(), newStatus);
+
+        return OrderMapper.entityToDto(updated);
     }
 
-    //ASSIGN DELIVERY AGENT
     @Override
+    @Transactional
     public OrderResponseDto assignDeliveryAgent(Long orderId, Long agentId) {
-
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
         order.setDeliveryAgentId(agentId);
+        Order updated = orderRepository.save(order);
 
-        return OrderMapper.entityToDto(orderRepository.save(order));
+        log.info("Delivery agent assigned orderId={} agentId={}", orderId, agentId);
+        return OrderMapper.entityToDto(updated);
     }
 
-    //CANCEL ORDER
     @Override
-    public OrderResponseDto cancelOrder(Long orderId, String token) {
-
-        Long customerId = jwtUtil.extractUserId(token);
-
+    @Transactional
+    public OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
-        if (!order.getCustomerId().equals(customerId)) {
-            throw  new UnauthorizedActionException("You are not allowed to perform this action");
+        if (!order.getCustomerId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to cancel this order");
+        }
+
+        if (!(order.getOrderStatus() == OrderStatus.PLACED || order.getOrderStatus() == OrderStatus.CONFIRMED)) {
+            throw new InvalidOrderStateException("Order cannot be cancelled after preparation begins");
         }
 
         order.setOrderStatus(OrderStatus.CANCELLED);
+        Order updated = orderRepository.save(order);
 
-        return OrderMapper.entityToDto(orderRepository.save(order));
+        log.info("Order cancelled orderId={} customerId={}", orderId, currentUser.getUserId());
+
+        if (order.getPaymentMode() != PaymentMode.COD) {
+            try {
+                paymentClient.refundPayment(orderId, "Bearer dummy");
+                log.info("Refund requested for orderId={}", orderId);
+            } catch (Exception ex) {
+                log.error("Refund call failed for orderId={}", orderId, ex);
+            }
+        }
+
+        return OrderMapper.entityToDto(updated);
     }
 
-    //REORDER FROM HISTORY
     @Override
-    public OrderResponseDto reorderFromHistory(Long orderId, String token) {
-
-        Long customerId = jwtUtil.extractUserId(token);
-
+    public OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser) {
         Order oldOrder = orderRepository.findById(orderId)
-                .orElseThrow(() -> new  OrderNotFoundException("Order not found with id: " + orderId));
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
-        if (!oldOrder.getCustomerId().equals(customerId)) {
-            throw new UnauthorizedActionException("You are not allowed to perform this action");
+        if (!oldOrder.getCustomerId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to reorder this order");
         }
 
-        Order newOrder = new Order();
-        newOrder.setCustomerId(customerId);
-        newOrder.setRestaurantId(oldOrder.getRestaurantId());
-        newOrder.setPaymentMode(oldOrder.getPaymentMode());
-        newOrder.setDeliveryAddress(oldOrder.getDeliveryAddress());
-        newOrder.setSpecialInstructions(oldOrder.getSpecialInstructions());
-        newOrder.setOrderDate(LocalDateTime.now());
-        newOrder.setEstimatedDelivery(LocalDateTime.now().plusMinutes(30));
+        OrderRequestDto request = new OrderRequestDto();
+        request.setRestaurantId(oldOrder.getRestaurantId());
+        request.setDiscount(BigDecimal.ZERO);
+        request.setPaymentMode(oldOrder.getPaymentMode());
+        request.setDeliveryAddress(oldOrder.getDeliveryAddress());
+        request.setSpecialInstructions(oldOrder.getSpecialInstructions());
 
-        for (OrderItem item : oldOrder.getItems()) {
-            OrderItem newItem = new OrderItem();
-            newItem.setMenuItemId(item.getMenuItemId());
-            newItem.setName(item.getName());
-            newItem.setPrice(item.getPrice());
-            newItem.setQuantity(item.getQuantity());
-            newItem.setCustomization(item.getCustomization());
+        List<OrderItemRequestDto> items = oldOrder.getItems().stream().map(item ->
+                new OrderItemRequestDto(
+                        item.getMenuItemId(),
+                        item.getName(),
+                        item.getPrice(),
+                        item.getQuantity(),
+                        item.getCustomization()
+                )
+        ).toList();
 
-            newOrder.addItem(newItem);
-        }
+        request.setItems(items);
 
-        BigDecimal totalAmount = newOrder.getItems().stream()
-                .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        newOrder.setTotalAmount(totalAmount);
-        newOrder.setDiscount(BigDecimal.ZERO);
-        newOrder.setFinalAmount(totalAmount);
-
-        return OrderMapper.entityToDto(orderRepository.save(newOrder));
+        log.info("Reordering old orderId={} for customerId={}", orderId, currentUser.getUserId());
+        return placeOrder(request, currentUser);
     }
 
-    //COUNT ORDERS
     @Override
     public Long getOrderCountByRestaurant(Long restaurantId) {
         return orderRepository.countByRestaurantId(restaurantId);
+    }
+
+    private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {
+        if (currentStatus == OrderStatus.CANCELLED || currentStatus == OrderStatus.DELIVERED) {
+            throw new InvalidOrderStateException("No further status change allowed from " + currentStatus);
+        }
+
+        boolean valid = switch (currentStatus) {
+            case PLACED -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.CANCELLED;
+            case CONFIRMED -> newStatus == OrderStatus.PREPARING || newStatus == OrderStatus.CANCELLED;
+            case PREPARING -> newStatus == OrderStatus.PICKED_UP;
+            case PICKED_UP -> newStatus == OrderStatus.DELIVERED;
+            default -> false;
+        };
+
+        if (!valid) {
+            throw new InvalidOrderStateException(
+                    "Invalid status transition from " + currentStatus + " to " + newStatus
+            );
+        }
     }
 }

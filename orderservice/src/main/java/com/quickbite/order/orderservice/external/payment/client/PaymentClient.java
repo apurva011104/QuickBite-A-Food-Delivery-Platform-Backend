@@ -1,37 +1,22 @@
 package com.quickbite.order.orderservice.external.payment.client;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import com.quickbite.order.orderservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentResponseDto;
 
-@Service
-public class PaymentClient {
+@FeignClient(name = "PAYMENT-SERVICE", url = "http://localhost:8085")
+public interface PaymentClient {
 
-    @Autowired
-    private RestTemplate restTemplate;
+    @PostMapping("/payments")
+    PaymentResponseDto processPayment(@RequestBody PaymentRequestDto request,
+                                      @RequestHeader("Authorization") String authorizationHeader);
 
-    private final String PAYMENT_URL = "http://localhost:8085"; // adjust port
-
-    public PaymentResponseDto processPayment(PaymentRequestDto request, String token) {
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", "Bearer " + token);
-
-        HttpEntity<PaymentRequestDto> entity = new HttpEntity<>(request, headers);
-
-        ResponseEntity<PaymentResponseDto> response =
-                restTemplate.postForEntity(
-                        PAYMENT_URL + "/payments",
-                        entity,
-                        PaymentResponseDto.class
-                );
-
-        return response.getBody();
-    }
+    @PostMapping("/payments/refund/{orderId}")
+    PaymentResponseDto refundPayment(@PathVariable("orderId") Long orderId,
+                                     @RequestHeader("Authorization") String authorizationHeader);
 }
