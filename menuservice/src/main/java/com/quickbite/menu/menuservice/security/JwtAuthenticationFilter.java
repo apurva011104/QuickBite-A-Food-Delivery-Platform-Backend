@@ -45,23 +45,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String email = jwtUtil.extractEmail(token);
             String role = jwtUtil.extractRole(token);
+            Long userId = jwtUtil.extractUserId(token);
 
-            if (email != null && SecurityContextHolder.getContext().getAuthentication() == null
+            if (email != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null
                     && jwtUtil.isTokenValid(token, email)) {
+
+                UserPrincipal principal = new UserPrincipal(userId, email, role);
 
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
-                                email,
+                                principal,
                                 null,
                                 List.of(new SimpleGrantedAuthority("ROLE_" + role))
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
-                log.debug("Menu-service authenticated user={} role={}", email, role);
+                log.debug("Menu-service authenticated userId={} role={}", userId, role);
             }
         } catch (Exception ex) {
             log.warn("Invalid JWT in menu-service: {}", ex.getMessage());
             SecurityContextHolder.clearContext();
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);
