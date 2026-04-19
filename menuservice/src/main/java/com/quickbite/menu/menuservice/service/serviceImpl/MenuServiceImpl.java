@@ -3,12 +3,12 @@ package com.quickbite.menu.menuservice.service.serviceImpl;
 import java.math.BigDecimal;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.quickbite.menu.menuservice.client.RestaurantOwnerClient;
+import com.quickbite.menu.menuservice.dto.external.RestaurantSummaryDto;
 import com.quickbite.menu.menuservice.dto.requestDto.CategoryRequestDto;
 import com.quickbite.menu.menuservice.dto.requestDto.MenuItemRequestDto;
 import com.quickbite.menu.menuservice.dto.responseDto.CategoryResponseDto;
@@ -20,16 +20,23 @@ import com.quickbite.menu.menuservice.mapper.CategoryMapper;
 import com.quickbite.menu.menuservice.mapper.MenuItemMapper;
 import com.quickbite.menu.menuservice.repository.MenuCategoryRepository;
 import com.quickbite.menu.menuservice.repository.MenuItemRepository;
+import com.quickbite.menu.menuservice.security.UserPrincipal;
 import com.quickbite.menu.menuservice.service.MenuService;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class MenuServiceImpl implements MenuService {
 
-    private static final Logger log = LoggerFactory.getLogger(MenuServiceImpl.class);
+    @Autowired
+    private MenuCategoryRepository categoryRepository;
 
-    private final MenuCategoryRepository categoryRepository;
-    private final MenuItemRepository itemRepository;
-    private final RestaurantOwnerClient restaurantOwnerClient;
+    @Autowired
+    private MenuItemRepository itemRepository;
+
+    @Autowired
+    private RestaurantOwnerClient restaurantOwnerClient;
 
     public MenuServiceImpl(MenuCategoryRepository categoryRepository,
                            MenuItemRepository itemRepository,
@@ -47,7 +54,7 @@ public class MenuServiceImpl implements MenuService {
         MenuCategory category = CategoryMapper.dtoToEntity(dto);
         MenuCategory saved = categoryRepository.save(category);
 
-        log.info("Category created. categoryId={} restaurantId={}", saved.getCategoryId(), saved.getRestaurantId());
+        log.info("Category created categoryId={} restaurantId={}", saved.getCategoryId(), saved.getRestaurantId());
         return CategoryMapper.entityToDto(saved);
     }
 
@@ -68,7 +75,7 @@ public class MenuServiceImpl implements MenuService {
         MenuItem item = MenuItemMapper.dtoToEntity(dto, category);
         MenuItem saved = itemRepository.save(item);
 
-        log.info("Menu item created. itemId={} restaurantId={} categoryId={}",
+        log.info("Menu item created itemId={} restaurantId={} categoryId={}",
                 saved.getItemId(), saved.getRestaurantId(), category.getCategoryId());
 
         return MenuItemMapper.entityToDto(saved);
@@ -151,7 +158,7 @@ public class MenuServiceImpl implements MenuService {
         item.setCategory(category);
 
         MenuItem updated = itemRepository.save(item);
-        log.info("Menu item updated. itemId={}", updated.getItemId());
+        log.info("Menu item updated itemId={}", updated.getItemId());
 
         return MenuItemMapper.entityToDto(updated);
     }
@@ -170,7 +177,7 @@ public class MenuServiceImpl implements MenuService {
         category.setDisplayOrder(dto.getDisplayOrder());
 
         MenuCategory updated = categoryRepository.save(category);
-        log.info("Category updated. categoryId={}", updated.getCategoryId());
+        log.info("Category updated categoryId={}", updated.getCategoryId());
 
         return CategoryMapper.entityToDto(updated);
     }
@@ -186,7 +193,7 @@ public class MenuServiceImpl implements MenuService {
         item.setAvailable(isAvailable);
         MenuItem updated = itemRepository.save(item);
 
-        log.info("Item availability changed. itemId={} available={}", itemId, isAvailable);
+        log.info("Item availability changed itemId={} available={}", itemId, isAvailable);
         return MenuItemMapper.entityToDto(updated);
     }
 
@@ -199,7 +206,7 @@ public class MenuServiceImpl implements MenuService {
         validateRestaurantOwnership(item.getRestaurantId());
 
         itemRepository.delete(item);
-        log.info("Menu item deleted. itemId={}", itemId);
+        log.info("Menu item deleted itemId={}", itemId);
     }
 
     @Override
@@ -211,7 +218,7 @@ public class MenuServiceImpl implements MenuService {
         validateRestaurantOwnership(category.getRestaurantId());
 
         categoryRepository.delete(category);
-        log.info("Category deleted. categoryId={}", categoryId);
+        log.info("Category deleted categoryId={}", categoryId);
     }
 
     @Override
@@ -239,10 +246,18 @@ public class MenuServiceImpl implements MenuService {
     }
 
     private void validateRestaurantOwnership(Long restaurantId) {
-        boolean owned = restaurantOwnerClient.isRestaurantOwnedByCurrentOwner(restaurantId);
+        List<RestaurantSummaryDto> myRestaurants = restaurantOwnerClient.getMyRestaurants();
+        
+        boolean owned = myRestaurants != null && myRestaurants.stream()
+                .anyMatch(r -> r.getRestaurantId().equals(restaurantId));
+        
         if (!owned) {
             throw new IllegalArgumentException("You do not have access to this restaurant");
         }
+    }
+
+    private String extractCurrentTokenFromContextIfNeeded(UserPrincipal currentUser) {
+        throw new RuntimeException("Replace this method with controller-passed token approach or Feign interceptor setup");
     }
 
     private void validatePrices(BigDecimal price, BigDecimal discountedPrice) {

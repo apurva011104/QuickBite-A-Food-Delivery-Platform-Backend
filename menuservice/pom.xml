@@ -120,7 +120,13 @@
 		    <version>2.8.5</version>
 		</dependency>
 
-		<!-- TESTING -->
+		<!--OPEN FEIGN-->
+		<dependency>
+		    <groupId>org.springframework.cloud</groupId>
+		    <artifactId>spring-cloud-starter-openfeign</artifactId>
+		</dependency>
+
+		<!--TESTING-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
