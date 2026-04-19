@@ -4,8 +4,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -22,28 +24,26 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
-                        // CUSTOMER
-                        .requestMatchers(HttpMethod.POST, "/orders").hasAuthority("CUSTOMER")
-                        .requestMatchers(HttpMethod.GET, "/orders/customer").hasAuthority("CUSTOMER")
-                        .requestMatchers(HttpMethod.PUT, "/orders/*/cancel").hasAuthority("CUSTOMER")
-                        .requestMatchers(HttpMethod.POST, "/orders/*/reorder").hasAuthority("CUSTOMER")
+                        .requestMatchers(HttpMethod.POST, "/orders").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.GET, "/orders/customer").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.PUT, "/orders/*/cancel").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.POST, "/orders/*/reorder").hasRole("CUSTOMER")
 
-                        // OWNER / ADMIN
-                        .requestMatchers(HttpMethod.GET, "/orders/restaurant/*").hasAnyAuthority("OWNER", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/orders/count/*").hasAnyAuthority("OWNER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/orders/restaurant/*").hasAnyRole("OWNER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/orders/count/*").hasAnyRole("OWNER", "ADMIN")
 
-                        // OWNER / ADMIN / DELIVERY_AGENT
-                        .requestMatchers(HttpMethod.GET, "/orders/active").hasAnyAuthority("OWNER", "ADMIN", "DELIVERY_AGENT")
-                        .requestMatchers(HttpMethod.PUT, "/orders/*/status").hasAnyAuthority("OWNER", "ADMIN", "DELIVERY_AGENT")
+                        .requestMatchers(HttpMethod.GET, "/orders/active").hasAnyRole("OWNER", "ADMIN", "AGENT")
+                        .requestMatchers(HttpMethod.PUT, "/orders/*/status").hasAnyRole("OWNER", "ADMIN", "AGENT")
 
-                        // ADMIN only
-                        .requestMatchers(HttpMethod.PUT, "/orders/*/assign-agent").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/orders/*/assign-agent").hasRole("ADMIN")
 
-                        // temporarily restrict order-by-id to all business roles, then tighten in service layer
-                        .requestMatchers(HttpMethod.GET, "/orders/*").hasAnyAuthority("CUSTOMER", "OWNER", "ADMIN", "DELIVERY_AGENT")
+                        .requestMatchers(HttpMethod.GET, "/orders/*")
+                        .hasAnyRole("CUSTOMER", "OWNER", "ADMIN", "AGENT")
 
                         .anyRequest().authenticated()
                 )

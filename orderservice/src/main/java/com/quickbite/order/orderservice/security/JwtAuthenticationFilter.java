@@ -3,6 +3,8 @@ package com.quickbite.order.orderservice.security;
 import java.io.IOException;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -20,6 +22,8 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
     @Autowired
     private JwtUtil jwtUtil;
 
@@ -31,35 +35,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String header = request.getHeader("Authorization");
 
-        String token = null;
-        String email = null;
-        String role = null;
-
-        if (header != null && header.startsWith("Bearer ")) {
-            token = header.substring(7);
-
-            try {
-                email = jwtUtil.extractEmail(token);
-                role = jwtUtil.extractRole(token);
-            } catch (Exception e) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                return;
-            }
+        if (header == null || !header.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        String token = header.substring(7);
 
-            if (!jwtUtil.isTokenExpired(token)) {
+        try {
+            String email = jwtUtil.extractEmail(token);
+            String role = jwtUtil.extractRole(token);
+            Long userId = jwtUtil.extractUserId(token);
+
+            if (email != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null
+                    && jwtUtil.isTokenValid(token, email)) {
+
+                UserPrincipal principal = new UserPrincipal(userId, email, role);
 
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
-                                email,
+                                principal,
                                 null,
-                                List.of(new SimpleGrantedAuthority(role))
+                                List.of(new SimpleGrantedAuthority("ROLE_" + role))
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                log.debug("Order-service authenticated userId={} role={}", userId, role);
             }
+        } catch (Exception ex) {
+            log.warn("Invalid JWT in order-service: {}", ex.getMessage());
+            SecurityContextHolder.clearContext();
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);
