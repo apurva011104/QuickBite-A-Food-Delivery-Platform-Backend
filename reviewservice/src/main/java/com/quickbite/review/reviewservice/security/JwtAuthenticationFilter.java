@@ -31,7 +31,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        String path = request.getRequestURI();
         String header = request.getHeader("Authorization");
 
         if (header == null || !header.startsWith("Bearer ")) {
@@ -60,10 +59,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
-                log.debug("Authenticated review-service request path={} userId={} role={}", path, userId, role);
+                log.debug("Review-service authenticated userId={} role={}", userId, role);
             }
         } catch (Exception ex) {
-            log.warn("Invalid JWT token for path={} message={}", path, ex.getMessage());
+            log.warn("Invalid JWT token in review-service: {}", ex.getMessage());
             SecurityContextHolder.clearContext();
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;

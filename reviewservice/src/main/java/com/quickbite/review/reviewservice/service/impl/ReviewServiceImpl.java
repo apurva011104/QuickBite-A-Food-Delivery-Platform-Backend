@@ -14,6 +14,9 @@ import com.quickbite.review.reviewservice.entity.Review;
 import com.quickbite.review.reviewservice.exception.BadRequestException;
 import com.quickbite.review.reviewservice.exception.ResourceNotFoundException;
 import com.quickbite.review.reviewservice.exception.UnauthorizedActionException;
+import com.quickbite.review.reviewservice.external.delivery.client.DeliveryClient;
+import com.quickbite.review.reviewservice.external.delivery.dto.DeliveryRatingUpdateRequestDto;
+import com.quickbite.review.reviewservice.external.restaurant.client.RestaurantClient;
 import com.quickbite.review.reviewservice.mapper.ReviewMapper;
 import com.quickbite.review.reviewservice.repository.ReviewRepository;
 import com.quickbite.review.reviewservice.security.UserPrincipal;
@@ -30,6 +33,8 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final ReviewMapper reviewMapper;
+    private final RestaurantClient restaurantClient;
+    private final DeliveryClient deliveryClient;
 
     @Override
     public ReviewResponseDto addReview(UserPrincipal currentUser, ReviewRequestDto requestDto) {
@@ -44,10 +49,10 @@ public class ReviewServiceImpl implements ReviewService {
         review.setVerified(false);
 
         Review savedReview = reviewRepository.save(review);
-
         log.info("Review created successfully reviewId={}", savedReview.getReviewId());
 
-        // later: call restaurant-service and delivery-service or publish event
+        pushRatings(savedReview);
+
         return reviewMapper.toResponseDto(savedReview);
     }
 
@@ -121,10 +126,12 @@ public class ReviewServiceImpl implements ReviewService {
             review.setComment(requestDto.getComment());
         }
 
-        review.setVerified(false); // reset verification if customer edits
+        review.setVerified(false);
 
         Review updatedReview = reviewRepository.save(review);
         log.info("Review updated successfully reviewId={}", reviewId);
+
+        pushRatings(updatedReview);
 
         return reviewMapper.toResponseDto(updatedReview);
     }
@@ -152,6 +159,7 @@ public class ReviewServiceImpl implements ReviewService {
 
         reviewRepository.delete(review);
         log.info("Review deleted successfully reviewId={}", reviewId);
+
         return new MessageResponseDto("Review deleted successfully");
     }
 
@@ -186,5 +194,29 @@ public class ReviewServiceImpl implements ReviewService {
                 .stream()
                 .map(reviewMapper::toResponseDto)
                 .toList();
+    }
+
+    private void pushRatings(Review review) {
+        try {
+            restaurantClient.updateRestaurantRating(
+                    review.getRestaurantId(),
+                    review.getFoodRating().doubleValue()
+            );
+            log.info("Restaurant rating pushed restaurantId={} rating={}",
+                    review.getRestaurantId(), review.getFoodRating());
+        } catch (Exception ex) {
+            log.error("Failed to push restaurant rating for restaurantId={}", review.getRestaurantId(), ex);
+        }
+
+        try {
+            deliveryClient.updateDeliveryRating(
+                    review.getAgentId(),
+                    new DeliveryRatingUpdateRequestDto(review.getDeliveryRating())
+            );
+            log.info("Delivery rating pushed agentId={} rating={}",
+                    review.getAgentId(), review.getDeliveryRating());
+        } catch (Exception ex) {
+            log.error("Failed to push delivery rating for agentId={}", review.getAgentId(), ex);
+        }
     }
 }
