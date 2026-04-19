@@ -25,26 +25,26 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "delivery_agents")
 public class DeliveryAgent {
-    
+
     @Id
-    @GeneratedValue(strategy=GenerationType.IDENTITY)
-    @Column(nullable=false, updatable=false)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(nullable = false, updatable = false)
     private Long agentId;
 
-    @Column(nullable=false, unique=true)
+    @Column(nullable = false, unique = true)
     private Long userId;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private String fullName;
 
-    @Column(nullable=false, unique=true)
+    @Column(nullable = false, unique = true)
     private String phone;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable=false)
+    @Column(nullable = false)
     private VehicleType vehicleType;
 
-    @Column(nullable=false)
+    @Column(nullable = false, unique = true)
     private String vehicleNumber;
 
     @Column(precision = 10, scale = 7)
@@ -53,52 +53,35 @@ public class DeliveryAgent {
     @Column(precision = 10, scale = 7)
     private BigDecimal currentLongitude;
 
-    @Column(nullable=false)
-    private boolean available = true;
+    @Column(nullable = false)
+    private boolean available = false;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private boolean verified = false;
 
-    @Column(nullable=false, precision = 3, scale = 2)
+    @Column(nullable = false, precision = 3, scale = 2)
     private BigDecimal avgRating = BigDecimal.ZERO;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private Integer totalDeliveries = 0;
 
-    @Column(nullable=false, updatable=false)
+    @Column(nullable = false)
+    private Integer ratingCount = 0;
+
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
-
-    public DeliveryAgent(Long userId, String fullName, String phone, VehicleType vehicleType, String vehicleNumber) {
-        this.userId = userId;
-        this.fullName = fullName;
-        this.phone = phone;
-        this.vehicleType = vehicleType;
-        this.vehicleNumber = vehicleNumber;
-    }
-
-    public DeliveryAgent(Long userId, String fullName, String phone, VehicleType vehicleType, String vehicleNumber,
-            BigDecimal currentLatitude, BigDecimal currentLongitude) {
-        this.userId = userId;
-        this.fullName = fullName;
-        this.phone = phone;
-        this.vehicleType = vehicleType;
-        this.vehicleNumber = vehicleNumber;
-        this.currentLatitude = currentLatitude;
-        this.currentLongitude = currentLongitude;
-    }
 
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
-    
+
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-
 }
