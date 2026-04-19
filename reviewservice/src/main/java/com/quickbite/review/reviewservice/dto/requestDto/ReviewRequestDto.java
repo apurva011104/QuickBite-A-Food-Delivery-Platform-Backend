@@ -12,9 +12,6 @@ public class ReviewRequestDto {
     @NotNull(message = "Order ID is required")
     private Long orderId;
 
-    @NotNull(message = "Customer ID is required")
-    private Long customerId;
-
     @NotNull(message = "Restaurant ID is required")
     private Long restaurantId;
 
