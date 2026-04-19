@@ -44,7 +44,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser) {
+    public OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser, String token) {
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new EmptyOrderException("Order must contain at least one item");
         }
@@ -88,7 +88,7 @@ public class OrderServiceImpl implements OrderService {
         try {
             PaymentResponseDto paymentResponse = paymentClient.processPayment(
                     paymentRequest,
-                    "Bearer dummy" // replace with forwarded token once Feign interceptor/header forwarding is added
+                    "Bearer " + token
             );
 
             if (paymentResponse != null) {
@@ -120,17 +120,17 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
-
+    
         if ("CUSTOMER".equals(currentUser.getRole()) && !order.getCustomerId().equals(currentUser.getUserId())) {
             throw new UnauthorizedActionException("You are not allowed to view this order");
         }
-
+    
         if ("AGENT".equals(currentUser.getRole())
                 && order.getDeliveryAgentId() != null
                 && !order.getDeliveryAgentId().equals(currentUser.getUserId())) {
             throw new UnauthorizedActionException("You are not allowed to view this order");
         }
-
+    
         return OrderMapper.entityToDto(order);
     }
 
@@ -139,7 +139,7 @@ public class OrderServiceImpl implements OrderService {
         return orderRepository.findByCustomerIdOrderByOrderDateDesc(customerId)
                 .stream()
                 .map(OrderMapper::entityToDto)
-                .toList();
+            .toList();
     }
 
     @Override
@@ -197,7 +197,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser) {
+    public OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser,String token) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
@@ -216,7 +216,7 @@ public class OrderServiceImpl implements OrderService {
 
         if (order.getPaymentMode() != PaymentMode.COD) {
             try {
-                paymentClient.refundPayment(orderId, "Bearer dummy");
+                paymentClient.refundPayment(orderId, "Bearer" + token);
                 log.info("Refund requested for orderId={}", orderId);
             } catch (Exception ex) {
                 log.error("Refund call failed for orderId={}", orderId, ex);
@@ -227,7 +227,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser) {
+    public OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser, String token) {
         Order oldOrder = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
@@ -255,7 +255,7 @@ public class OrderServiceImpl implements OrderService {
         request.setItems(items);
 
         log.info("Reordering old orderId={} for customerId={}", orderId, currentUser.getUserId());
-        return placeOrder(request, currentUser);
+        return placeOrder(request, currentUser, token);
     }
 
     @Override

@@ -9,7 +9,7 @@ import com.quickbite.order.orderservice.security.UserPrincipal;
 
 public interface OrderService {
 
-    OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser);
+    OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser, String token);
 
     OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser);
 
@@ -23,7 +23,7 @@ public interface OrderService {
 
     OrderResponseDto assignDeliveryAgent(Long orderId, Long agentId);
 
-    OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser);
+    OrderResponseDto cancelOrder(Long orderId, UserPrincipal currentUser, String token);
 
     OrderResponseDto reorderFromHistory(Long orderId, UserPrincipal currentUser);
 
