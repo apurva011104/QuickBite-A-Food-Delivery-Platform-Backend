@@ -18,6 +18,4 @@ public class ReviewUpdateRequestDto {
 
     @Size(max = 1000, message = "Comment must not exceed 1000 characters")
     private String comment;
-
-    private Boolean verified;
 }

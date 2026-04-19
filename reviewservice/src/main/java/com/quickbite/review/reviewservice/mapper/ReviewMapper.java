@@ -16,7 +16,6 @@ public class ReviewMapper {
 
         Review review = new Review();
         review.setOrderId(dto.getOrderId());
-        review.setCustomerId(dto.getCustomerId());
         review.setRestaurantId(dto.getRestaurantId());
         review.setAgentId(dto.getAgentId());
         review.setFoodRating(dto.getFoodRating());
