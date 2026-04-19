@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 import com.quickbite.payment.paymentservice.entity.PaymentMode;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -14,6 +15,7 @@ public class PaymentRequestDto {
     private Long orderId;
 
     @NotNull
+    @DecimalMin(value = "0.01", inclusive = true)
     private BigDecimal amount;
 
     @NotNull

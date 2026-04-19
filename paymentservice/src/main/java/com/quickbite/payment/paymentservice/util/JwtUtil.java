@@ -1,5 +1,6 @@
 package com.quickbite.payment.paymentservice.util;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
@@ -18,12 +19,18 @@ public class JwtUtil {
     private String secret;
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    // 🔥 Extract userId (MOST IMPORTANT)
     public Long extractUserId(String token) {
-        return extractClaims(token).get("userId", Long.class);
+        Object userId = extractClaims(token).get("userId");
+        if (userId instanceof Integer intValue) {
+            return intValue.longValue();
+        }
+        if (userId instanceof Long longValue) {
+            return longValue;
+        }
+        throw new RuntimeException("Invalid userId in token");
     }
 
     public String extractEmail(String token) {
@@ -43,7 +50,7 @@ public class JwtUtil {
     }
 
     public boolean isTokenValid(String token, String email) {
-        final String extractedEmail = extractEmail(token);
+        String extractedEmail = extractEmail(token);
         return extractedEmail.equals(email) && !isTokenExpired(token);
     }
 
