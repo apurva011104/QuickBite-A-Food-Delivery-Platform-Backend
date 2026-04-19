@@ -47,7 +47,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String role = jwtUtil.extractRole(token);
             Long userId = jwtUtil.extractUserId(token);
 
-            if (email != null && SecurityContextHolder.getContext().getAuthentication() == null
+            if (email != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null
                     && jwtUtil.isTokenValid(token, email)) {
 
                 UserPrincipal principal = new UserPrincipal(userId, email, role);

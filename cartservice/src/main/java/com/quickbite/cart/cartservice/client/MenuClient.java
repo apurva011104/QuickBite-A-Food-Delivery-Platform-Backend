@@ -1,27 +1,15 @@
 package com.quickbite.cart.cartservice.client;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import com.quickbite.cart.cartservice.dto.external.MenuItemSnapshotDto;
 
-@Component
-public class MenuClient {
 
-    private final RestTemplate restTemplate;
+@FeignClient(name = "MENUSERVICE")
+public interface MenuClient {
 
-    @Value("${menu.service.base-url:http://localhost:8082}")
-    private String menuServiceBaseUrl;
-
-    public MenuClient(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
-    }
-
-    public MenuItemSnapshotDto getMenuItemById(Long itemId) {
-        return restTemplate.getForObject(
-                menuServiceBaseUrl + "/menu/item/" + itemId,
-                MenuItemSnapshotDto.class
-        );
-    }
+    @GetMapping("/menu/item/{id}")
+    MenuItemSnapshotDto getMenuItemById(@PathVariable("id") Long itemId);
 }

@@ -20,16 +20,14 @@ import com.quickbite.cart.cartservice.security.UserPrincipal;
 import com.quickbite.cart.cartservice.service.CartService;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/cart")
+@RequiredArgsConstructor
 public class CartController {
 
     private final CartService cartService;
-
-    public CartController(CartService cartService) {
-        this.cartService = cartService;
-    }
 
     @GetMapping("/me")
     public ResponseEntity<CartResponseDto> getCart(Authentication authentication) {
