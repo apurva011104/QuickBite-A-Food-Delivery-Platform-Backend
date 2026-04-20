@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto
 import com.quickbite.delivery.deliveryservice.entity.ActiveDelivery;
 import com.quickbite.delivery.deliveryservice.entity.DeliveryAgent;
 import com.quickbite.delivery.deliveryservice.entity.DeliveryStatus;
+import com.quickbite.delivery.deliveryservice.event.NotificationEvent;
 import com.quickbite.delivery.deliveryservice.exception.AgentNotAvailableException;
 import com.quickbite.delivery.deliveryservice.exception.AgentNotVerifiedException;
 import com.quickbite.delivery.deliveryservice.exception.BadRequestException;
@@ -31,19 +33,27 @@ import com.quickbite.delivery.deliveryservice.repository.ActiveDeliveryRepositor
 import com.quickbite.delivery.deliveryservice.repository.DeliveryRepository;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
+import com.quickbite.delivery.deliveryservice.service.NotificationEventPublisher;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
-@RequiredArgsConstructor
 @Transactional
 @Slf4j
 public class DeliveryServiceImpl implements DeliveryService {
 
-    private final DeliveryRepository deliveryRepository;
-    private final ActiveDeliveryRepository activeDeliveryRepository;
-    private final DeliveryAgentMapper deliveryAgentMapper;
+    @Autowired
+    private DeliveryRepository deliveryRepository;
+
+    @Autowired
+    private ActiveDeliveryRepository activeDeliveryRepository;
+
+    @Autowired
+    private DeliveryAgentMapper deliveryAgentMapper;
+
+    @Autowired
+    private NotificationEventPublisher notificationEventPublisher;
+
 
     @Override
     public DeliveryAgentResponseDto registerAgent(UserPrincipal currentUser, DeliveryAgentRequestDto requestDto) {
@@ -243,6 +253,17 @@ public class DeliveryServiceImpl implements DeliveryService {
         agent.setAvailable(false);
         deliveryRepository.save(agent);
 
+        notificationEventPublisher.publishDeliveryNotification(
+                new NotificationEvent(
+                        "DELIVERY_ASSIGNED",
+                        agent.getUserId(),
+                        "Delivery Assigned",
+                        "A new delivery has been assigned for order #" + requestDto.getOrderId() + ".",
+                        requestDto.getOrderId(),
+                        "DELIVERY"
+                )
+        );
+
         log.info("Order {} assigned to agent {}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
                 "Order " + requestDto.getOrderId() + " assigned to agent " + requestDto.getAgentId() + " successfully"
@@ -255,7 +276,9 @@ public class DeliveryServiceImpl implements DeliveryService {
         validateAgentOwnership(agent, currentUser);
 
         ActiveDelivery activeDelivery = activeDeliveryRepository.findByOrderId(requestDto.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Active delivery not found for order ID: " + requestDto.getOrderId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Active delivery not found for order ID: " + requestDto.getOrderId()
+                ));
 
         if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
             throw new UnauthorizedActionException("This order is not assigned to the given agent");
@@ -267,6 +290,17 @@ public class DeliveryServiceImpl implements DeliveryService {
         agent.setAvailable(true);
         agent.setTotalDeliveries(agent.getTotalDeliveries() + 1);
         deliveryRepository.save(agent);
+
+        notificationEventPublisher.publishDeliveryNotification(
+                new NotificationEvent(
+                        "DELIVERY_COMPLETED",
+                        agent.getUserId(),
+                        "Delivery Completed",
+                        "Delivery for order #" + requestDto.getOrderId() + " has been completed.",
+                        requestDto.getOrderId(),
+                        "DELIVERY"
+                )
+        );
 
         log.info("Delivery completed for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
