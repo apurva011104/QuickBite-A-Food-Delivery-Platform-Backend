@@ -2,8 +2,7 @@ package com.quickbite.restaurant.restaurantservice.service.serviceImpl;
 
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -12,21 +11,24 @@ import org.springframework.transaction.annotation.Transactional;
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.entity.Restaurant;
+import com.quickbite.restaurant.restaurantservice.event.NotificationEvent;
 import com.quickbite.restaurant.restaurantservice.mapper.RestaurantMapper;
 import com.quickbite.restaurant.restaurantservice.repository.RestaurantRepository;
 import com.quickbite.restaurant.restaurantservice.security.UserPrincipal;
+import com.quickbite.restaurant.restaurantservice.service.NotificationEventPublisher;
 import com.quickbite.restaurant.restaurantservice.service.RestaurantService;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class RestaurantServiceImpl implements RestaurantService {
 
-    private static final Logger log = LoggerFactory.getLogger(RestaurantServiceImpl.class);
+    @Autowired
+    private RestaurantRepository repository;
 
-    private final RestaurantRepository repository;
-
-    public RestaurantServiceImpl(RestaurantRepository repository) {
-        this.repository = repository;
-    }
+    @Autowired
+    private NotificationEventPublisher notificationEventPublisher;
 
     @Override
     @Transactional
@@ -37,9 +39,22 @@ public class RestaurantServiceImpl implements RestaurantService {
         restaurant.setOwnerId(user.getUserId());
         restaurant.setApproved(false);
         restaurant.setOpen(false);
+        restaurant.setRejectionReason(null);
 
         Restaurant saved = repository.save(restaurant);
         log.info("Restaurant registered. restaurantId={} ownerId={}", saved.getRestaurantId(), user.getUserId());
+
+        // For now send to admin userId = 1
+        notificationEventPublisher.publishRestaurantNotification(
+                new NotificationEvent(
+                        "RESTAURANT_SUBMITTED_FOR_APPROVAL",
+                        1L,
+                        "Restaurant Approval Needed",
+                        "Restaurant '" + saved.getName() + "' is awaiting approval.",
+                        saved.getRestaurantId(),
+                        "RESTAURANT"
+                )
+        );
 
         return RestaurantMapper.mapToDto(saved);
     }
@@ -154,10 +169,58 @@ public class RestaurantServiceImpl implements RestaurantService {
                 .orElseThrow(() -> new RuntimeException("Restaurant not found"));
 
         restaurant.setApproved(true);
+        restaurant.setRejectionReason(null);
 
         Restaurant updated = repository.save(restaurant);
         log.info("Restaurant approved. restaurantId={}", id);
 
+        notificationEventPublisher.publishRestaurantNotification(
+                new NotificationEvent(
+                        "RESTAURANT_APPROVED",
+                        updated.getOwnerId(),
+                        "Restaurant Approved",
+                        "Your restaurant '" + updated.getName() + "' has been approved.",
+                        updated.getRestaurantId(),
+                        "RESTAURANT"
+                )
+        );
+
+        return RestaurantMapper.mapToDto(updated);
+    }
+
+    @Override
+    public List<RestaurantResponseDto> getPendingRestaurants() {
+        return repository.findByIsApprovedFalse()
+                .stream()
+                .map(RestaurantMapper::mapToDto)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public RestaurantResponseDto rejectRestaurant(Long id, String reason) {
+        Restaurant restaurant = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Restaurant not found"));
+
+        restaurant.setApproved(false);
+        restaurant.setOpen(false);
+        restaurant.setRejectionReason(reason);
+
+        Restaurant updated = repository.save(restaurant);
+        log.info("Restaurant rejected. restaurantId={} reason={}", id, reason);
+
+        notificationEventPublisher.publishRestaurantNotification(
+                new NotificationEvent(
+                        "RESTAURANT_REJECTED",
+                        updated.getOwnerId(),
+                        "Restaurant Rejected",
+                        "Your restaurant '" + updated.getName() + "' was rejected."
+                                + (reason != null && !reason.isBlank() ? " Reason: " + reason : ""),
+                        updated.getRestaurantId(),
+                        "RESTAURANT"
+                )
+        );
+    
         return RestaurantMapper.mapToDto(updated);
     }
 

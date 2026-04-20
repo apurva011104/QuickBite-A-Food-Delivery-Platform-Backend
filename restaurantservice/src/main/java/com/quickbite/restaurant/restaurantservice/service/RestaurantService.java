@@ -23,6 +23,8 @@ public interface RestaurantService {
 
     //Admin methods
     RestaurantResponseDto approveRestaurant(Long id);
+    List<RestaurantResponseDto> getPendingRestaurants();
+    RestaurantResponseDto rejectRestaurant(Long id, String reason);
 
     //System methods 
     RestaurantResponseDto updateRating(Long id, Double rating);

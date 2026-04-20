@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantApprovalRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.service.RestaurantService;
@@ -106,6 +107,19 @@ public class RestaurantController {
     @PutMapping("/admin/approve/{id}")
     public ResponseEntity<RestaurantResponseDto> approve(@PathVariable Long id) {
         return ResponseEntity.ok(service.approveRestaurant(id));
+    }
+
+    //Get Pending Restaurants
+    @GetMapping("/admin/pending")
+    public ResponseEntity<List<RestaurantResponseDto>> getPendingRestaurants() {
+        return ResponseEntity.ok(service.getPendingRestaurants());
+    }
+
+    //Reject Restaurant
+    @PutMapping("/admin/reject/{id}")
+    public ResponseEntity<RestaurantResponseDto> reject(@PathVariable Long id,
+                                                        @RequestBody RestaurantApprovalRequestDto request) {
+        return ResponseEntity.ok(service.rejectRestaurant(id, request.getReason()));
     }
 
     //-----------------System endpoints-----------------
