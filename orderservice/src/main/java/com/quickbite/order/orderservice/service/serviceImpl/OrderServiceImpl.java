@@ -4,8 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +17,7 @@ import com.quickbite.order.orderservice.dto.responseDto.PaymentStatus;
 import com.quickbite.order.orderservice.entity.Order;
 import com.quickbite.order.orderservice.entity.OrderStatus;
 import com.quickbite.order.orderservice.entity.PaymentMode;
+import com.quickbite.order.orderservice.event.NotificationEvent;
 import com.quickbite.order.orderservice.exception.EmptyOrderException;
 import com.quickbite.order.orderservice.exception.InvalidOrderStateException;
 import com.quickbite.order.orderservice.exception.OrderNotFoundException;
@@ -26,15 +26,23 @@ import com.quickbite.order.orderservice.external.payment.client.PaymentClient;
 import com.quickbite.order.orderservice.mapper.OrderMapper;
 import com.quickbite.order.orderservice.repository.OrderRepository;
 import com.quickbite.order.orderservice.security.UserPrincipal;
+import com.quickbite.order.orderservice.service.NotificationEventPublisher;
 import com.quickbite.order.orderservice.service.OrderService;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class OrderServiceImpl implements OrderService {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
+    @Autowired
+    private OrderRepository orderRepository;
 
-    private final OrderRepository orderRepository;
-    private final PaymentClient paymentClient;
+    @Autowired
+    private PaymentClient paymentClient;
+
+    @Autowired
+    private NotificationEventPublisher notificationEventPublisher;
 
     public OrderServiceImpl(OrderRepository orderRepository,
                             PaymentClient paymentClient) {
@@ -79,6 +87,16 @@ public class OrderServiceImpl implements OrderService {
 
         Order savedOrder = orderRepository.save(order);
         log.info("Order created orderId={} status={}", savedOrder.getOrderId(), savedOrder.getOrderStatus());
+        notificationEventPublisher.publishOrderNotification(
+                new NotificationEvent(
+                        "ORDER_PLACED",
+                        savedOrder.getCustomerId(),
+                        "Order Placed",
+                        "Your order #" + savedOrder.getOrderId() + " has been placed successfully.",
+                        savedOrder.getOrderId(),
+                        "ORDER"
+                )
+        );
 
         PaymentRequestDto paymentRequest = new PaymentRequestDto();
         paymentRequest.setOrderId(savedOrder.getOrderId());
@@ -99,9 +117,30 @@ public class OrderServiceImpl implements OrderService {
                 } else if (paymentResponse.getStatus() == PaymentStatus.PAID) {
                     savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
                     log.info("Online payment successful orderId={}", savedOrder.getOrderId());
+                    notificationEventPublisher.publishOrderNotification(
+                            new NotificationEvent(
+                                    "ORDER_CONFIRMED",
+                                    savedOrder.getCustomerId(),
+                                    "Order Confirmed",
+                                    "Your order #" + savedOrder.getOrderId() + " has been confirmed.",
+                                    savedOrder.getOrderId(),
+                                    "ORDER"
+                            )
+                    );
+
                 } else {
                     savedOrder.setOrderStatus(OrderStatus.CANCELLED);
                     log.warn("Payment failed/pending for non-COD orderId={}", savedOrder.getOrderId());
+                    notificationEventPublisher.publishOrderNotification(
+                            new NotificationEvent(
+                                    "ORDER_CANCELLED",
+                                    savedOrder.getCustomerId(),
+                                    "Order Cancelled",
+                                    "Your order #" + savedOrder.getOrderId() + " has been cancelled.",
+                                    savedOrder.getOrderId(),
+                                    "ORDER"
+                            )
+                    );
                 }
             } else {
                 savedOrder.setOrderStatus(OrderStatus.CANCELLED);
@@ -213,7 +252,16 @@ public class OrderServiceImpl implements OrderService {
         Order updated = orderRepository.save(order);
 
         log.info("Order cancelled orderId={} customerId={}", orderId, currentUser.getUserId());
-
+        notificationEventPublisher.publishOrderNotification(
+                new NotificationEvent(
+                        "ORDER_CANCELLED",
+                        updated.getCustomerId(),
+                        "Order Cancelled",
+                        "Your order #" + updated.getOrderId() + " has been cancelled.",
+                        updated.getOrderId(),
+                        "ORDER"
+                )
+        );
         if (order.getPaymentMode() != PaymentMode.COD) {
             try {
                 paymentClient.refundPayment(orderId, "Bearer" + token);
