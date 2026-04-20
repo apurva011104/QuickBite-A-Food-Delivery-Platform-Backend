@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ import com.quickbite.payment.paymentservice.entity.PaymentStatus;
 import com.quickbite.payment.paymentservice.entity.TransactionType;
 import com.quickbite.payment.paymentservice.entity.Wallet;
 import com.quickbite.payment.paymentservice.entity.WalletStatement;
+import com.quickbite.payment.paymentservice.event.NotificationEvent;
 import com.quickbite.payment.paymentservice.exception.InsufficientBalanceException;
 import com.quickbite.payment.paymentservice.exception.InvalidPaymentModeException;
 import com.quickbite.payment.paymentservice.exception.PaymentAlreadyProcessedException;
@@ -29,6 +31,7 @@ import com.quickbite.payment.paymentservice.mapper.WalletStatementMapper;
 import com.quickbite.payment.paymentservice.repository.PaymentRepository;
 import com.quickbite.payment.paymentservice.repository.WalletRepository;
 import com.quickbite.payment.paymentservice.security.UserPrincipal;
+import com.quickbite.payment.paymentservice.service.NotificationEventPublisher;
 import com.quickbite.payment.paymentservice.service.PaymentService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -37,8 +40,14 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private final PaymentRepository paymentRepository;
-    private final WalletRepository walletRepository;
+    @Autowired
+    private PaymentRepository paymentRepository;
+
+    @Autowired
+    private WalletRepository walletRepository;
+
+    @Autowired
+    private NotificationEventPublisher notificationEventPublisher;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                               WalletRepository walletRepository) {
@@ -71,21 +80,39 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.setStatus(PaymentStatus.PAID);
                 payment.setTransactionId("TXN-" + UUID.randomUUID());
                 payment.setPaidAt(LocalDateTime.now());
+
+                Payment saved = paymentRepository.save(payment);
+
+                notificationEventPublisher.publishPaymentNotification(
+                        new NotificationEvent(
+                                "PAYMENT_SUCCESS",
+                                saved.getCustomerId(),
+                                "Payment Successful",
+                                "Payment for order #" + saved.getOrderId() + " was successful.",
+                                saved.getOrderId(),
+                                "PAYMENT"
+                    )
+                );
+
                 log.info("Payment successful for orderId={} mode={}", request.getOrderId(), request.getMode());
+                return PaymentMapper.entityToDto(saved);
             }
+
             case COD -> {
                 payment.setStatus(PaymentStatus.PENDING);
                 payment.setTransactionId("COD-" + UUID.randomUUID());
+
+                Payment saved = paymentRepository.save(payment);
                 log.info("COD selected for orderId={}, payment kept PENDING", request.getOrderId());
+                return PaymentMapper.entityToDto(saved);
             }
+
             case WALLET -> {
                 return payFromWallet(customerId, request.getOrderId(), request.getAmount());
             }
+
             default -> throw new InvalidPaymentModeException("Invalid payment mode");
         }
-
-        Payment saved = paymentRepository.save(payment);
-        return PaymentMapper.entityToDto(saved);
     }
 
     @Override
@@ -165,6 +192,18 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         Payment saved = paymentRepository.save(payment);
+
+        notificationEventPublisher.publishPaymentNotification(
+                new NotificationEvent(
+                        "PAYMENT_REFUNDED",
+                        saved.getCustomerId(),
+                        "Payment Refunded",
+                        "Refund for order #" + saved.getOrderId() + " has been processed.",
+                        saved.getOrderId(),
+                        "PAYMENT"
+                )
+        );
+        
         log.info("Refund completed paymentId={} orderId={}", saved.getPaymentId(), orderId);
 
         return PaymentMapper.entityToDto(saved);
@@ -203,6 +242,18 @@ public class PaymentServiceImpl implements PaymentService {
         wallet.addStatement(new WalletStatement(amount, TransactionType.CREDIT, "Wallet top-up"));
 
         Wallet saved = walletRepository.save(wallet);
+
+        notificationEventPublisher.publishPaymentNotification(
+                new NotificationEvent(
+                        "WALLET_TOPUP_SUCCESS",
+                        customerId,
+                        "Wallet Top-up Successful",
+                        "Your wallet has been credited with ₹" + amount + ".",
+                        saved.getWalletId(),
+                        "WALLET"
+                )
+        );
+
         log.info("Wallet topped up customerId={} amount={} balance={}", customerId, amount, saved.getBalance());
 
         return WalletMapper.entityToDto(saved);
@@ -238,6 +289,18 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setPaidAt(LocalDateTime.now());
 
         Payment saved = paymentRepository.save(payment);
+
+        notificationEventPublisher.publishPaymentNotification(
+                new NotificationEvent(
+                        "PAYMENT_SUCCESS",
+                        saved.getCustomerId(),
+                        "Wallet Payment Successful",
+                        "Wallet payment for order #" + saved.getOrderId() + " was successful.",
+                        saved.getOrderId(),
+                        "PAYMENT"
+                )
+        );
+
         log.info("Wallet payment successful paymentId={} orderId={} customerId={}",
                 saved.getPaymentId(), orderId, customerId);
 
