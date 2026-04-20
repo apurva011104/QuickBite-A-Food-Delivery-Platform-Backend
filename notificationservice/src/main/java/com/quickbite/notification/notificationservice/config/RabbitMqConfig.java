@@ -16,7 +16,22 @@ public class RabbitMqConfig {
     public static final String ORDER_NOTIFICATION_ROUTING_KEY = "notification.order";
     public static final String PAYMENT_NOTIFICATION_QUEUE = "quickbite.notification.payment.queue";
     public static final String PAYMENT_NOTIFICATION_ROUTING_KEY = "notification.payment";
+    public static final String DELIVERY_NOTIFICATION_QUEUE = "quickbite.notification.delivery.queue";
+    public static final String DELIVERY_NOTIFICATION_ROUTING_KEY = "notification.delivery";
 
+    @Bean
+    public Queue deliveryNotificationQueue() {
+        return QueueBuilder.durable(DELIVERY_NOTIFICATION_QUEUE).build();
+    }
+
+    @Bean
+    public Binding deliveryNotificationBinding() {
+        return BindingBuilder
+                .bind(deliveryNotificationQueue())
+                .to(notificationExchange())
+                .with(DELIVERY_NOTIFICATION_ROUTING_KEY);
+    }
+    
     @Bean
     public Queue paymentNotificationQueue() {
         return QueueBuilder.durable(PAYMENT_NOTIFICATION_QUEUE).build();
