@@ -1,5 +1,6 @@
 package com.quickbite.restaurant.restaurantservice.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -37,6 +38,9 @@ public class Restaurant {
 
     private boolean isOpen = false;
     private boolean isApproved = false;
+
+    @Column(length = 500)
+    private String rejectionReason;
 
     private Double deliveryRadius;
     private Double minOrderAmount;
