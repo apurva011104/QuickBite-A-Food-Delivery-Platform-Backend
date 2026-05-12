@@ -6,30 +6,41 @@ import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import com.quickbite.payment.paymentservice.dto.requestDto.AddToWalletRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.PaymentRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayOrderRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayVerifyRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.WalletPaymentRequestDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.PaymentResponseDto;
+import com.quickbite.payment.paymentservice.dto.responseDto.RazorpayOrderResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletStatementResponseDto;
 import com.quickbite.payment.paymentservice.entity.PaymentStatus;
 import com.quickbite.payment.paymentservice.security.UserPrincipal;
 import com.quickbite.payment.paymentservice.service.PaymentService;
+import com.quickbite.payment.paymentservice.service.RazorpayPaymentService;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping
 @Validated
+@RequiredArgsConstructor
 public class PaymentController {
 
     private final PaymentService paymentService;
 
-    public PaymentController(PaymentService paymentService) {
-        this.paymentService = paymentService;
-    }
+    private final RazorpayPaymentService razorpayPaymentService;
 
     @PostMapping("/payments")
     public ResponseEntity<PaymentResponseDto> processPayment(@Valid @RequestBody PaymentRequestDto request,
@@ -62,6 +73,24 @@ public class PaymentController {
                                                      Authentication authentication) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
         return ResponseEntity.ok(paymentService.refundPayment(orderId, user));
+    }
+
+    @PostMapping("/payments/razorpay/create-order")
+    public ResponseEntity<RazorpayOrderResponseDto> createRazorpayOrder(
+            @Valid @RequestBody RazorpayOrderRequestDto request,
+            Authentication authentication) {
+            
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(razorpayPaymentService.createRazorpayOrder(request, user));
+    }
+    
+    @PostMapping("/payments/razorpay/verify")
+    public ResponseEntity<PaymentResponseDto> verifyRazorpayPayment(
+            @Valid @RequestBody RazorpayVerifyRequestDto request,
+            Authentication authentication) {
+            
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(razorpayPaymentService.verifyRazorpayPayment(request, user));
     }
 
     @GetMapping("/wallet")

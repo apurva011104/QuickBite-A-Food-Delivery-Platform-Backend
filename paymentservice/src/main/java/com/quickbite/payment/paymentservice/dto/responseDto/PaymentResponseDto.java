@@ -25,4 +25,6 @@ public class PaymentResponseDto {
     private String currency;
     private LocalDateTime paidAt;
     private LocalDateTime refundedAt;
+    private String razorpayOrderId;
+    private String razorpayPaymentId;
 }

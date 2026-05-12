@@ -51,6 +51,12 @@ public class Payment {
 
     private LocalDateTime refundedAt;
 
+    @Column(unique = true)
+    private String razorpayOrderId;
+    
+    @Column(unique = true)
+    private String razorpayPaymentId;
+
     public Payment(Long orderId, Long customerId, BigDecimal amount, PaymentMode mode) {
         this.orderId = orderId;
         this.customerId = customerId;
