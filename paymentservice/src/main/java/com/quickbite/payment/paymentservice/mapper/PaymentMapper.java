@@ -26,7 +26,9 @@ public class PaymentMapper {
                 payment.getTransactionId(),
                 payment.getCurrency(),
                 payment.getPaidAt(),
-                payment.getRefundedAt()
+                payment.getRefundedAt(),
+                payment.getRazorpayOrderId(),
+                payment.getRazorpayPaymentId()
         );
     }
 }

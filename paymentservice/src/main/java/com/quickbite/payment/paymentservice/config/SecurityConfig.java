@@ -29,6 +29,7 @@ public class SecurityConfig {
                         .requestMatchers("/payments").hasRole("CUSTOMER")
                         .requestMatchers("/payments/customer").hasRole("CUSTOMER")
                         .requestMatchers("/wallet/**").hasRole("CUSTOMER")
+                        .requestMatchers("/payments/razorpay/**").hasRole("CUSTOMER")
                         .requestMatchers("/payments/order/**").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers("/payments/refund/**").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers("/payments/*/status").hasRole("ADMIN")
