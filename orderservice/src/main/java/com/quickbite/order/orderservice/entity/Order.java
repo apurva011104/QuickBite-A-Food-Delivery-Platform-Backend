@@ -15,6 +15,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -51,7 +53,8 @@ public class Order {
     private PaymentMode paymentMode;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable=false)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(nullable=false, length = 32)
     private OrderStatus orderStatus = OrderStatus.PLACED;
 
     @Column(nullable=false)
