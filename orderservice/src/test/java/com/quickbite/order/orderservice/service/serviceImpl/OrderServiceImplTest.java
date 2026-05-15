@@ -161,6 +161,26 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void placeOrderShouldStayPaymentPendingForOnlinePendingPayment() {
+        PaymentResponseDto paymentResponse = new PaymentResponseDto();
+        paymentResponse.setStatus(PaymentStatus.PENDING);
+
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            if (saved.getOrderId() == null) {
+                saved.setOrderId(100L);
+            }
+            return saved;
+        });
+        when(paymentClient.processPayment(any(), eq("Bearer token"))).thenReturn(paymentResponse);
+
+        OrderResponseDto result = orderService.placeOrder(orderRequest, customer, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        verify(notificationEventPublisher, times(1)).publishOrderNotification(any(NotificationEvent.class));
+    }
+
+    @Test
     void placeOrderShouldCancelForFailedPayment() {
         PaymentResponseDto paymentResponse = new PaymentResponseDto();
         paymentResponse.setStatus(PaymentStatus.FAILED);
@@ -348,7 +368,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.cancelOrder(100L, customer, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(paymentClient).refundPayment(100L, "Bearertoken");
+        verify(paymentClient).refundPayment(100L, "Bearer token");
     }
 
     @Test
@@ -367,7 +387,18 @@ class OrderServiceImplTest {
     void cancelOrderShouldSwallowRefundFailure() {
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(paymentClient.refundPayment(100L, "Bearertoken")).thenThrow(new RuntimeException("refund down"));
+        when(paymentClient.refundPayment(100L, "Bearer token")).thenThrow(new RuntimeException("refund down"));
+
+        OrderResponseDto result = orderService.cancelOrder(100L, customer, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void cancelOrderShouldAllowPaymentPendingOrders() {
+        order.setOrderStatus(OrderStatus.PAYMENT_PENDING);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderResponseDto result = orderService.cancelOrder(100L, customer, "token");
 

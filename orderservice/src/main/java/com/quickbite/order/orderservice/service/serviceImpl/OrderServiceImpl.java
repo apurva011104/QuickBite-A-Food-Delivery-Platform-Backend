@@ -114,6 +114,12 @@ public class OrderServiceImpl implements OrderService {
                         && paymentResponse.getStatus() == PaymentStatus.PENDING) {
                     savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
                     log.info("COD order confirmed orderId={}", savedOrder.getOrderId());
+                } else if ((savedOrder.getPaymentMode() == PaymentMode.CARD
+                        || savedOrder.getPaymentMode() == PaymentMode.UPI)
+                        && paymentResponse.getStatus() == PaymentStatus.PENDING) {
+                    savedOrder.setOrderStatus(OrderStatus.PAYMENT_PENDING);
+                    log.info("Online payment initialized orderId={}, awaiting Razorpay verification",
+                            savedOrder.getOrderId());
                 } else if (paymentResponse.getStatus() == PaymentStatus.PAID) {
                     savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
                     log.info("Online payment successful orderId={}", savedOrder.getOrderId());
@@ -193,6 +199,7 @@ public class OrderServiceImpl implements OrderService {
     public List<OrderResponseDto> getActiveOrders() {
         List<OrderStatus> activeStatuses = List.of(
                 OrderStatus.PLACED,
+                OrderStatus.PAYMENT_PENDING,
                 OrderStatus.CONFIRMED,
                 OrderStatus.PREPARING,
                 OrderStatus.PICKED_UP
@@ -244,7 +251,9 @@ public class OrderServiceImpl implements OrderService {
             throw new UnauthorizedActionException("You are not allowed to cancel this order");
         }
 
-        if (!(order.getOrderStatus() == OrderStatus.PLACED || order.getOrderStatus() == OrderStatus.CONFIRMED)) {
+        if (!(order.getOrderStatus() == OrderStatus.PLACED
+                || order.getOrderStatus() == OrderStatus.PAYMENT_PENDING
+                || order.getOrderStatus() == OrderStatus.CONFIRMED)) {
             throw new InvalidOrderStateException("Order cannot be cancelled after preparation begins");
         }
 
@@ -264,7 +273,7 @@ public class OrderServiceImpl implements OrderService {
         );
         if (order.getPaymentMode() != PaymentMode.COD) {
             try {
-                paymentClient.refundPayment(orderId, "Bearer" + token);
+                paymentClient.refundPayment(orderId, "Bearer " + token);
                 log.info("Refund requested for orderId={}", orderId);
             } catch (Exception ex) {
                 log.error("Refund call failed for orderId={}", orderId, ex);
@@ -317,7 +326,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         boolean valid = switch (currentStatus) {
-            case PLACED -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.CANCELLED;
+            case PLACED -> newStatus == OrderStatus.CONFIRMED
+                    || newStatus == OrderStatus.PAYMENT_PENDING
+                    || newStatus == OrderStatus.CANCELLED;
+            case PAYMENT_PENDING -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.CANCELLED;
             case CONFIRMED -> newStatus == OrderStatus.PREPARING || newStatus == OrderStatus.CANCELLED;
             case PREPARING -> newStatus == OrderStatus.PICKED_UP;
             case PICKED_UP -> newStatus == OrderStatus.DELIVERED;
