@@ -77,24 +77,12 @@ public class PaymentServiceImpl implements PaymentService {
 
         switch (request.getMode()) {
             case CARD, UPI -> {
-                payment.setStatus(PaymentStatus.PAID);
-                payment.setTransactionId("TXN-" + UUID.randomUUID());
-                payment.setPaidAt(LocalDateTime.now());
+                payment.setStatus(PaymentStatus.PENDING);
+                payment.setTransactionId(request.getMode().name() + "-PENDING-" + UUID.randomUUID());
 
                 Payment saved = paymentRepository.save(payment);
-
-                notificationEventPublisher.publishPaymentNotification(
-                        new NotificationEvent(
-                                "PAYMENT_SUCCESS",
-                                saved.getCustomerId(),
-                                "Payment Successful",
-                                "Payment for order #" + saved.getOrderId() + " was successful.",
-                                saved.getOrderId(),
-                                "PAYMENT"
-                    )
-                );
-
-                log.info("Payment successful for orderId={} mode={}", request.getOrderId(), request.getMode());
+                log.info("Online payment initialized for orderId={} mode={}, awaiting gateway verification",
+                        request.getOrderId(), request.getMode());
                 return PaymentMapper.entityToDto(saved);
             }
 
@@ -248,7 +236,7 @@ public class PaymentServiceImpl implements PaymentService {
                         "WALLET_TOPUP_SUCCESS",
                         customerId,
                         "Wallet Top-up Successful",
-                        "Your wallet has been credited with ₹" + amount + ".",
+                        "Your wallet has been credited with Rs. " + amount + ".",
                         saved.getWalletId(),
                         "WALLET"
                 )

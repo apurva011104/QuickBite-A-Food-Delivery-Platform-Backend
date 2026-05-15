@@ -2,6 +2,7 @@ package com.quickbite.payment.paymentservice.service.serviceImpl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,7 +10,6 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,7 +21,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -76,7 +75,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processPaymentMarksCardPaymentsAsPaid() {
+    void processPaymentKeepsOnlinePaymentsPendingUntilGatewayVerification() {
         PaymentRequestDto request = new PaymentRequestDto();
         request.setOrderId(200L);
         request.setAmount(new BigDecimal("499.99"));
@@ -84,13 +83,12 @@ class PaymentServiceImplTest {
 
         PaymentResponseDto response = paymentService.processPayment(request, customerUser);
 
-        assertEquals(PaymentStatus.PAID, response.getStatus());
+        assertEquals(PaymentStatus.PENDING, response.getStatus());
         assertEquals(PaymentMode.CARD, response.getMode());
         assertNotNull(response.getTransactionId());
-        assertNotNull(response.getPaidAt());
-        ArgumentCaptor<NotificationEvent> eventCaptor = ArgumentCaptor.forClass(NotificationEvent.class);
-        verify(notificationEventPublisher).publishPaymentNotification(eventCaptor.capture());
-        assertEquals("PAYMENT_SUCCESS", eventCaptor.getValue().getEventType());
+        assertTrue(response.getTransactionId().startsWith("CARD-PENDING-"));
+        assertNull(response.getPaidAt());
+        verify(notificationEventPublisher, never()).publishPaymentNotification(any());
     }
 
     @Test
