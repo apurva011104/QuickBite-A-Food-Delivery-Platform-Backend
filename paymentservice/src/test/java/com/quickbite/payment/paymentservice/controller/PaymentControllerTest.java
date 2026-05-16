@@ -19,9 +19,12 @@ import com.quickbite.payment.paymentservice.dto.requestDto.AddToWalletRequestDto
 import com.quickbite.payment.paymentservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayOrderRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayVerifyRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayWalletTopUpRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayWalletTopUpVerifyRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.WalletPaymentRequestDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.PaymentResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.RazorpayOrderResponseDto;
+import com.quickbite.payment.paymentservice.dto.responseDto.RazorpayWalletTopUpOrderResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletStatementResponseDto;
 import com.quickbite.payment.paymentservice.entity.PaymentMode;
@@ -119,6 +122,38 @@ class PaymentControllerTest {
         ResponseEntity<WalletResponseDto> response = paymentController.addMoney(request, authentication);
 
         assertEquals(new BigDecimal("55.00"), response.getBody().getBalance());
+    }
+
+    @Test
+    void createWalletTopUpOrderDelegatesToService() {
+        RazorpayWalletTopUpRequestDto request = new RazorpayWalletTopUpRequestDto();
+        request.setAmount(new BigDecimal("150.00"));
+        RazorpayWalletTopUpOrderResponseDto responseDto =
+                new RazorpayWalletTopUpOrderResponseDto(-10L, "order_wallet_10", "key", new BigDecimal("150.00"), "INR");
+        when(razorpayPaymentService.createWalletTopUpOrder(request, principal)).thenReturn(responseDto);
+
+        ResponseEntity<RazorpayWalletTopUpOrderResponseDto> response =
+                paymentController.createWalletTopUpOrder(request, authentication);
+
+        assertEquals("order_wallet_10", response.getBody().getRazorpayOrderId());
+        assertEquals(-10L, response.getBody().getPaymentReferenceId());
+    }
+
+    @Test
+    void verifyWalletTopUpPaymentDelegatesToService() {
+        RazorpayWalletTopUpVerifyRequestDto request = new RazorpayWalletTopUpVerifyRequestDto();
+        request.setPaymentReferenceId(-11L);
+        request.setRazorpayOrderId("order_wallet_11");
+        request.setRazorpayPaymentId("pay_wallet_11");
+        request.setRazorpaySignature("sig_wallet_11");
+        WalletResponseDto responseDto =
+                new WalletResponseDto(8L, principal.getUserId(), new BigDecimal("155.00"), List.of());
+        when(razorpayPaymentService.verifyWalletTopUpPayment(request, principal)).thenReturn(responseDto);
+
+        ResponseEntity<WalletResponseDto> response =
+                paymentController.verifyWalletTopUpPayment(request, authentication);
+
+        assertEquals(new BigDecimal("155.00"), response.getBody().getBalance());
     }
 
     @Test

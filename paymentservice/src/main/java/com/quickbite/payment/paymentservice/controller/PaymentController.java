@@ -19,9 +19,12 @@ import com.quickbite.payment.paymentservice.dto.requestDto.AddToWalletRequestDto
 import com.quickbite.payment.paymentservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayOrderRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayVerifyRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayWalletTopUpRequestDto;
+import com.quickbite.payment.paymentservice.dto.requestDto.RazorpayWalletTopUpVerifyRequestDto;
 import com.quickbite.payment.paymentservice.dto.requestDto.WalletPaymentRequestDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.PaymentResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.RazorpayOrderResponseDto;
+import com.quickbite.payment.paymentservice.dto.responseDto.RazorpayWalletTopUpOrderResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletResponseDto;
 import com.quickbite.payment.paymentservice.dto.responseDto.WalletStatementResponseDto;
 import com.quickbite.payment.paymentservice.entity.PaymentStatus;
@@ -110,6 +113,24 @@ public class PaymentController {
                                                       Authentication authentication) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
         return ResponseEntity.ok(paymentService.addToWallet(user.getUserId(), request.getAmount()));
+    }
+
+    @PostMapping("/wallet/razorpay/create-order")
+    public ResponseEntity<RazorpayWalletTopUpOrderResponseDto> createWalletTopUpOrder(
+            @Valid @RequestBody RazorpayWalletTopUpRequestDto request,
+            Authentication authentication) {
+
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(razorpayPaymentService.createWalletTopUpOrder(request, user));
+    }
+
+    @PostMapping("/wallet/razorpay/verify")
+    public ResponseEntity<WalletResponseDto> verifyWalletTopUpPayment(
+            @Valid @RequestBody RazorpayWalletTopUpVerifyRequestDto request,
+            Authentication authentication) {
+
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(razorpayPaymentService.verifyWalletTopUpPayment(request, user));
     }
 
     @PostMapping("/wallet/pay")
