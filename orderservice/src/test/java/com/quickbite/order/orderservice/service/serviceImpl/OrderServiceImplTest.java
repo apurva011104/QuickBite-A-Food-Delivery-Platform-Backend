@@ -255,16 +255,33 @@ class OrderServiceImplTest {
     void getOrderByIdShouldReturnOrderForCustomerOwner() {
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        OrderResponseDto result = orderService.getOrderById(100L, customer);
+        OrderResponseDto result = orderService.getOrderById(100L, customer, "token");
 
         assertThat(result.getOrderId()).isEqualTo(100L);
+    }
+
+    @Test
+    void getOrderByIdShouldConfirmPendingOnlineOrderAfterPaymentVerification() {
+        order.setOrderStatus(OrderStatus.PAYMENT_PENDING);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PaymentResponseDto paymentResponse = new PaymentResponseDto();
+        paymentResponse.setStatus(PaymentStatus.PAID);
+        when(paymentClient.getPaymentByOrder(100L, "Bearer token")).thenReturn(paymentResponse);
+
+        OrderResponseDto result = orderService.getOrderById(100L, customer, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(paymentClient).getPaymentByOrder(100L, "Bearer token");
+        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
     void getOrderByIdShouldRejectCustomerWhoDoesNotOwnOrder() {
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.getOrderById(100L, otherCustomer))
+        assertThatThrownBy(() -> orderService.getOrderById(100L, otherCustomer, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("You are not allowed to view this order");
     }
@@ -274,7 +291,7 @@ class OrderServiceImplTest {
         order.setDeliveryAgentId(7L);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.getOrderById(100L, agent))
+        assertThatThrownBy(() -> orderService.getOrderById(100L, agent, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("You are not allowed to view this order");
     }
@@ -283,7 +300,7 @@ class OrderServiceImplTest {
     void getOrderByIdShouldThrowWhenMissing() {
         when(orderRepository.findById(404L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.getOrderById(404L, customer))
+        assertThatThrownBy(() -> orderService.getOrderById(404L, customer, "token"))
                 .isInstanceOf(OrderNotFoundException.class);
     }
 
@@ -294,10 +311,26 @@ class OrderServiceImplTest {
         when(orderRepository.findByOrderStatusIn(any())).thenReturn(List.of(order));
         when(orderRepository.countByRestaurantId(10L)).thenReturn(6L);
 
-        assertThat(orderService.getOrdersByCustomer(1L)).hasSize(1);
+        assertThat(orderService.getOrdersByCustomer(1L, "token")).hasSize(1);
         assertThat(orderService.getOrdersByRestaurant(10L)).hasSize(1);
         assertThat(orderService.getActiveOrders()).hasSize(1);
         assertThat(orderService.getOrderCountByRestaurant(10L)).isEqualTo(6L);
+    }
+
+    @Test
+    void getOrdersByCustomerShouldConfirmPendingOnlineOrdersAfterPaymentVerification() {
+        order.setOrderStatus(OrderStatus.PAYMENT_PENDING);
+        when(orderRepository.findByCustomerIdOrderByOrderDateDesc(1L)).thenReturn(List.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PaymentResponseDto paymentResponse = new PaymentResponseDto();
+        paymentResponse.setStatus(PaymentStatus.PAID);
+        when(paymentClient.getPaymentByOrder(100L, "Bearer token")).thenReturn(paymentResponse);
+
+        List<OrderResponseDto> result = orderService.getOrdersByCustomer(1L, "token");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
     }
 
     @Test

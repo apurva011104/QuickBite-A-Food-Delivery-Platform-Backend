@@ -162,7 +162,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser) {
+    public OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser, String token) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
     
@@ -175,14 +175,17 @@ public class OrderServiceImpl implements OrderService {
                 && !order.getDeliveryAgentId().equals(currentUser.getUserId())) {
             throw new UnauthorizedActionException("You are not allowed to view this order");
         }
+
+        order = synchronizeOnlinePaymentStatus(order, token);
     
         return OrderMapper.entityToDto(order);
     }
 
     @Override
-    public List<OrderResponseDto> getOrdersByCustomer(Long customerId) {
+    public List<OrderResponseDto> getOrdersByCustomer(Long customerId, String token) {
         return orderRepository.findByCustomerIdOrderByOrderDateDesc(customerId)
                 .stream()
+                .map(order -> synchronizeOnlinePaymentStatus(order, token))
                 .map(OrderMapper::entityToDto)
             .toList();
     }
@@ -341,5 +344,39 @@ public class OrderServiceImpl implements OrderService {
                     "Invalid status transition from " + currentStatus + " to " + newStatus
             );
         }
+    }
+
+    private Order synchronizeOnlinePaymentStatus(Order order, String token) {
+        if (order.getOrderStatus() != OrderStatus.PAYMENT_PENDING) {
+            return order;
+        }
+
+        if (order.getPaymentMode() != PaymentMode.CARD && order.getPaymentMode() != PaymentMode.UPI) {
+            return order;
+        }
+
+        try {
+            PaymentResponseDto payment = paymentClient.getPaymentByOrder(order.getOrderId(), "Bearer " + token);
+            if (payment != null && payment.getStatus() == PaymentStatus.PAID) {
+                order.setOrderStatus(OrderStatus.CONFIRMED);
+                Order updated = orderRepository.save(order);
+                log.info("Order confirmed after verified online payment orderId={}", updated.getOrderId());
+                notificationEventPublisher.publishOrderNotification(
+                        new NotificationEvent(
+                                "ORDER_CONFIRMED",
+                                updated.getCustomerId(),
+                                "Order Confirmed",
+                                "Your order #" + updated.getOrderId() + " has been confirmed.",
+                                updated.getOrderId(),
+                                "ORDER"
+                        )
+                );
+                return updated;
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to synchronize payment status for orderId={}", order.getOrderId(), ex);
+        }
+
+        return order;
     }
 }

@@ -56,9 +56,11 @@ class OrderControllerSecurityTest {
 
     @Test
     void customerShouldAccessOwnOrdersEndpoint() throws Exception {
-        when(orderService.getOrdersByCustomer(1L)).thenReturn(java.util.List.of());
+        when(orderService.getOrdersByCustomer(1L, "token123")).thenReturn(java.util.List.of());
 
-        mockMvc.perform(get("/orders/customer").with(customerPrincipal()))
+        mockMvc.perform(get("/orders/customer")
+                        .header("Authorization", "Bearer token123")
+                        .with(customerPrincipal()))
                 .andExpect(status().isOk());
     }
 
