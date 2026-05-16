@@ -57,18 +57,22 @@ class OrderControllerTest {
 
     @Test
     void getOrderByIdShouldDelegateToService() {
-        when(orderService.getOrderById(100L, customer)).thenReturn(orderResponse());
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addHeader("Authorization", "Bearer token123");
+        when(orderService.getOrderById(100L, customer, "token123")).thenReturn(orderResponse());
 
-        ResponseEntity<OrderResponseDto> response = orderController.getOrderById(100L, authentication);
+        ResponseEntity<OrderResponseDto> response = orderController.getOrderById(100L, authentication, servletRequest);
 
         assertThat(response.getBody().getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
     }
 
     @Test
     void getOrdersByCustomerShouldUseAuthenticatedUser() {
-        when(orderService.getOrdersByCustomer(1L)).thenReturn(List.of(orderResponse()));
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addHeader("Authorization", "Bearer token123");
+        when(orderService.getOrdersByCustomer(1L, "token123")).thenReturn(List.of(orderResponse()));
 
-        ResponseEntity<List<OrderResponseDto>> response = orderController.getOrdersByCustomer(authentication);
+        ResponseEntity<List<OrderResponseDto>> response = orderController.getOrdersByCustomer(authentication, servletRequest);
 
         assertThat(response.getBody()).hasSize(1);
     }

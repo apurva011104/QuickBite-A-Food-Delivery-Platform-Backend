@@ -11,9 +11,9 @@ public interface OrderService {
 
     OrderResponseDto placeOrder(OrderRequestDto request, UserPrincipal currentUser, String token);
 
-    OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser);
+    OrderResponseDto getOrderById(Long orderId, UserPrincipal currentUser, String token);
 
-    List<OrderResponseDto> getOrdersByCustomer(Long customerId);
+    List<OrderResponseDto> getOrdersByCustomer(Long customerId, String token);
 
     List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId);
 

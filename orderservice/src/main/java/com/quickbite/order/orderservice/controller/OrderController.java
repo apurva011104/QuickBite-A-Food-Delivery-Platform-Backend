@@ -43,15 +43,19 @@ public class OrderController {
 
     @GetMapping("/{orderId}")
     public ResponseEntity<OrderResponseDto> getOrderById(@PathVariable Long orderId,
-                                                         Authentication authentication) {
+                                                         Authentication authentication,
+                                                         HttpServletRequest httpServletRequest) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
-        return ResponseEntity.ok(orderService.getOrderById(orderId, user));
+        String token = extractToken(httpServletRequest);
+        return ResponseEntity.ok(orderService.getOrderById(orderId, user, token));
     }
 
     @GetMapping("/customer")
-    public ResponseEntity<List<OrderResponseDto>> getOrdersByCustomer(Authentication authentication) {
+    public ResponseEntity<List<OrderResponseDto>> getOrdersByCustomer(Authentication authentication,
+                                                                      HttpServletRequest httpServletRequest) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
-        return ResponseEntity.ok(orderService.getOrdersByCustomer(user.getUserId()));
+        String token = extractToken(httpServletRequest);
+        return ResponseEntity.ok(orderService.getOrdersByCustomer(user.getUserId(), token));
     }
 
     @GetMapping("/restaurant/{restaurantId}")
