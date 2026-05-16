@@ -102,6 +102,17 @@ class PaymentControllerSecurityTest {
     }
 
     @Test
+    void customerCanUseWalletRazorpayEndpoints() throws Exception {
+        String requestBody = objectMapper.writeValueAsString(new WalletTopUpRequestBody(new BigDecimal("100.00")));
+
+        mockMvc.perform(post("/wallet/razorpay/create-order")
+                        .with(authentication(customerAuth))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void customerCannotUpdatePaymentStatus() throws Exception {
         mockMvc.perform(put("/payments/5/status")
                         .param("status", "PAID")
@@ -124,5 +135,8 @@ class PaymentControllerSecurityTest {
     }
 
     private record PaymentRequestBody(Long orderId, BigDecimal amount, String mode) {
+    }
+
+    private record WalletTopUpRequestBody(BigDecimal amount) {
     }
 }
