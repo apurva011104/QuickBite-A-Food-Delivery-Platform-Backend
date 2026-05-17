@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import com.quickbite.order.orderservice.dto.responseDto.RestaurantOwnerResponseDto;
 
-@FeignClient(name = "RESTAURANT-SERVICE")
+@FeignClient(name = "RESTAURANTSERVICE")
 public interface RestaurantClient {
 
     @GetMapping("/restaurants/internal/{id}/owner")
