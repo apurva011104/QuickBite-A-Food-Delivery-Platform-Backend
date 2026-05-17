@@ -26,6 +26,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantApprovalRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.OwnerRestaurantDetailsResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOrderResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.service.RestaurantService;
 
@@ -106,5 +109,36 @@ class RestaurantControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
 
         verify(restaurantService).rejectRestaurant(15L, "Incomplete license");
+    }
+
+    @Test
+    void getOwnerRestaurantDetailsShouldForwardAuthorizationHeader() throws Exception {
+        RestaurantResponseDto restaurant = new RestaurantResponseDto(21L, "Owner Hub", "Busy kitchen",
+                "Indian", "Delhi", 4.7, true, true, 25);
+        RestaurantOrderResponseDto order = new RestaurantOrderResponseDto();
+        order.setOrderId(900L);
+        order.setOrderStatus("CONFIRMED");
+        OwnerRestaurantDetailsResponseDto response = new OwnerRestaurantDetailsResponseDto(restaurant, List.of(order));
+
+        when(restaurantService.getOwnerRestaurantDetails(21L, "Bearer owner-token")).thenReturn(response);
+
+        mockMvc.perform(get("/restaurants/owner/details/21")
+                        .header("Authorization", "Bearer owner-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.restaurant.restaurantId").value(21))
+                .andExpect(jsonPath("$.orders[0].orderId").value(900));
+    }
+
+    @Test
+    void getOwnerInfoShouldReturnOwnerLookupPayload() throws Exception {
+        RestaurantOwnerResponseDto response = new RestaurantOwnerResponseDto(30L, 7L, "Lookup Cafe");
+
+        when(restaurantService.getRestaurantOwnerInfo(30L)).thenReturn(response);
+
+        mockMvc.perform(get("/restaurants/internal/30/owner"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.restaurantId").value(30))
+                .andExpect(jsonPath("$.ownerId").value(7))
+                .andExpect(jsonPath("$.name").value("Lookup Cafe"));
     }
 }
