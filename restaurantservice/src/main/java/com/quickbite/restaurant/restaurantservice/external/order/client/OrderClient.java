@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOrderResponseDto;
 
-@FeignClient(name = "ORDER-SERVICE")
+@FeignClient(name = "ORDERSERVICE")
 public interface OrderClient {
 
     @GetMapping("/orders/restaurant/{restaurantId}")
