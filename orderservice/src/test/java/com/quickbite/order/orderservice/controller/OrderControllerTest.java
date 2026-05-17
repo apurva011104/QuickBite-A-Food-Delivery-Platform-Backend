@@ -34,13 +34,17 @@ class OrderControllerTest {
     private OrderController orderController;
     private UsernamePasswordAuthenticationToken authentication;
     private UserPrincipal customer;
+    private UserPrincipal owner;
+    private UsernamePasswordAuthenticationToken ownerAuthentication;
 
     @BeforeEach
     void setUp() {
         orderController = new OrderController();
         org.springframework.test.util.ReflectionTestUtils.setField(orderController, "orderService", orderService);
         customer = new UserPrincipal(1L, "customer@quickbite.com", "CUSTOMER");
+        owner = new UserPrincipal(2L, "owner@quickbite.com", "OWNER");
         authentication = new UsernamePasswordAuthenticationToken(customer, null, List.of(() -> "ROLE_CUSTOMER"));
+        ownerAuthentication = new UsernamePasswordAuthenticationToken(owner, null, List.of(() -> "ROLE_OWNER"));
     }
 
     @Test
@@ -88,9 +92,10 @@ class OrderControllerTest {
 
     @Test
     void updateOrderStatusShouldDelegate() {
-        when(orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED)).thenReturn(orderResponse());
+        when(orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner)).thenReturn(orderResponse());
 
-        ResponseEntity<OrderResponseDto> response = orderController.updateOrderStatus(100L, OrderStatus.CONFIRMED);
+        ResponseEntity<OrderResponseDto> response =
+                orderController.updateOrderStatus(100L, OrderStatus.PREPARING, ownerAuthentication);
 
         assertThat(response.getBody().getOrderId()).isEqualTo(100L);
     }

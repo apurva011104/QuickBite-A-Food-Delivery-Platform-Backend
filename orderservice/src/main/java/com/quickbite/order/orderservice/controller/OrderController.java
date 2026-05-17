@@ -72,8 +72,10 @@ public class OrderController {
 
     @PutMapping("/{orderId}/status")
     public ResponseEntity<OrderResponseDto> updateOrderStatus(@PathVariable Long orderId,
-                                                              @RequestParam OrderStatus status) {
-        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, status));
+                                                              @RequestParam OrderStatus status,
+                                                              Authentication authentication) {
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, status, user));
     }
 
     @PutMapping("/{orderId}/assign-agent")

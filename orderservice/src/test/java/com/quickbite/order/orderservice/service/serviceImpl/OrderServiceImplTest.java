@@ -65,6 +65,8 @@ class OrderServiceImplTest {
     private UserPrincipal customer;
     private UserPrincipal otherCustomer;
     private UserPrincipal agent;
+    private UserPrincipal owner;
+    private UserPrincipal wrongOwner;
     private OrderRequestDto orderRequest;
     private Order order;
 
@@ -76,6 +78,8 @@ class OrderServiceImplTest {
         customer = new UserPrincipal(1L, "customer@quickbite.com", "CUSTOMER");
         otherCustomer = new UserPrincipal(9L, "other@quickbite.com", "CUSTOMER");
         agent = new UserPrincipal(5L, "agent@quickbite.com", "AGENT");
+        owner = new UserPrincipal(2L, "owner@quickbite.com", "OWNER");
+        wrongOwner = new UserPrincipal(99L, "owner2@quickbite.com", "OWNER");
 
         orderRequest = new OrderRequestDto(
                 10L,
@@ -332,8 +336,6 @@ class OrderServiceImplTest {
 
     @Test
     void getOrdersByRestaurantShouldRejectWrongOwner() {
-        UserPrincipal wrongOwner = new UserPrincipal(99L, "owner2@quickbite.com", "OWNER");
-
         assertThatThrownBy(() -> orderService.getOrdersByRestaurant(10L, wrongOwner))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("You are not allowed to view orders for this restaurant");
@@ -357,13 +359,24 @@ class OrderServiceImplTest {
 
     @Test
     void updateOrderStatusShouldAllowValidTransition() {
-        order.setOrderStatus(OrderStatus.PLACED);
+        order.setOrderStatus(OrderStatus.CONFIRMED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED);
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner);
 
-        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PREPARING);
+    }
+
+    @Test
+    void updateOrderStatusShouldAllowPreparingToReadyForPickup() {
+        order.setOrderStatus(OrderStatus.PREPARING);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.READY_FOR_PICKUP, owner);
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.READY_FOR_PICKUP);
     }
 
     @Test
@@ -371,7 +384,7 @@ class OrderServiceImplTest {
         order.setOrderStatus(OrderStatus.PLACED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.DELIVERED))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.DELIVERED, agent))
                 .isInstanceOf(InvalidOrderStateException.class)
                 .hasMessage("Invalid status transition from PLACED to DELIVERED");
     }
@@ -381,9 +394,28 @@ class OrderServiceImplTest {
         order.setOrderStatus(OrderStatus.CANCELLED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, agent))
                 .isInstanceOf(InvalidOrderStateException.class)
                 .hasMessage("No further status change allowed from CANCELLED");
+    }
+
+    @Test
+    void updateOrderStatusShouldRejectOwnerForDifferentRestaurant() {
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PREPARING, wrongOwner))
+                .isInstanceOf(UnauthorizedActionException.class)
+                .hasMessage("You are not allowed to view orders for this restaurant");
+    }
+
+    @Test
+    void updateOrderStatusShouldRejectOwnerForPickedUpTransition() {
+        order.setOrderStatus(OrderStatus.READY_FOR_PICKUP);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PICKED_UP, owner))
+                .isInstanceOf(UnauthorizedActionException.class)
+                .hasMessage("Owners can only move orders to PREPARING or READY_FOR_PICKUP");
     }
 
     @Test
