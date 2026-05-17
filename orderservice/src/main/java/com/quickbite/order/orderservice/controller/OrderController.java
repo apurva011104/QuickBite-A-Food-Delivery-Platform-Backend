@@ -59,8 +59,10 @@ public class OrderController {
     }
 
     @GetMapping("/restaurant/{restaurantId}")
-    public ResponseEntity<List<OrderResponseDto>> getOrdersByRestaurant(@PathVariable Long restaurantId) {
-        return ResponseEntity.ok(orderService.getOrdersByRestaurant(restaurantId));
+    public ResponseEntity<List<OrderResponseDto>> getOrdersByRestaurant(@PathVariable Long restaurantId,
+                                                                        Authentication authentication) {
+        UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(orderService.getOrdersByRestaurant(restaurantId, user));
     }
 
     @GetMapping("/active")

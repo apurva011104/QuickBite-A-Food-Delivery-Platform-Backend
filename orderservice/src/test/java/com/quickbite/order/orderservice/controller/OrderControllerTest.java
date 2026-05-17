@@ -78,6 +78,15 @@ class OrderControllerTest {
     }
 
     @Test
+    void getOrdersByRestaurantShouldUseAuthenticatedOwner() {
+        when(orderService.getOrdersByRestaurant(10L, customer)).thenReturn(List.of(orderResponse()));
+
+        ResponseEntity<List<OrderResponseDto>> response = orderController.getOrdersByRestaurant(10L, authentication);
+
+        assertThat(response.getBody()).hasSize(1);
+    }
+
+    @Test
     void updateOrderStatusShouldDelegate() {
         when(orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED)).thenReturn(orderResponse());
 
@@ -121,12 +130,9 @@ class OrderControllerTest {
     void getActiveOrdersAndCountsShouldDelegate() {
         when(orderService.getActiveOrders()).thenReturn(List.of(orderResponse()));
         when(orderService.getOrderCountByRestaurant(10L)).thenReturn(5L);
-        when(orderService.getOrdersByRestaurant(10L)).thenReturn(List.of(orderResponse()));
 
         assertThat(orderController.getActiveOrders().getBody()).hasSize(1);
         assertThat(orderController.getOrderCount(10L).getBody()).isEqualTo(5L);
-        assertThat(orderController.getOrdersByRestaurant(10L).getBody()).hasSize(1);
-        verify(orderService).getOrdersByRestaurant(10L);
     }
 
     @Test
