@@ -24,6 +24,7 @@ public class AuthMapper {
 
     public static AuthResponseDto userToAuthResponse(User user, String accessToken) {
         return new AuthResponseDto(
+                user.getId(),
                 user.getName(),
                 user.getEmail(),
                 user.getPhoneNumber(),
