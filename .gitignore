@@ -8,3 +8,6 @@ deliveryservice/*
 reviewservice/*
 notificationservice/*
 quickbiteweb/*
+eurekaserver/*
+apigateway/*
+.env
