@@ -8,6 +8,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.AvailabilityUpdateR
 import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.DeliveryAgentRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.LocationUpdateRequestDto;
+import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
@@ -38,6 +39,8 @@ public interface DeliveryService {
     MessageResponseDto updateRating(Long agentId, RatingUpdateRequestDto requestDto);
 
     MessageResponseDto assignOrder(AssignOrderRequestDto requestDto);
+
+    MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
     MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto);
 

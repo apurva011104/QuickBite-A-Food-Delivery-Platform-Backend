@@ -14,6 +14,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.AvailabilityUpdateR
 import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.DeliveryAgentRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.LocationUpdateRequestDto;
+import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
@@ -119,8 +120,14 @@ public class DeliveryServiceImpl implements DeliveryService {
     @Override
     @Transactional(readOnly = true)
     public List<DeliveryAgentResponseDto> getNearbyAgents(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm) {
-        if (latitude == null || longitude == null || radiusKm == null) {
-            throw new BadRequestException("Latitude, longitude, and radius are required");
+        validateCoordinates(latitude, longitude);
+
+        if (radiusKm == null) {
+            throw new BadRequestException("Radius is required");
+        }
+
+        if (radiusKm.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Radius must be greater than 0");
         }
 
         List<DeliveryAgent> candidates = deliveryRepository.findByAvailableTrueAndVerifiedTrue();
@@ -150,6 +157,7 @@ public class DeliveryServiceImpl implements DeliveryService {
     public MessageResponseDto updateLocation(Long agentId, UserPrincipal currentUser, LocationUpdateRequestDto requestDto) {
         DeliveryAgent agent = getAgentOrThrow(agentId);
         validateAgentOwnership(agent, currentUser);
+        validateCoordinates(requestDto.getCurrentLatitude(), requestDto.getCurrentLongitude());
 
         agent.setCurrentLatitude(requestDto.getCurrentLatitude());
         agent.setCurrentLongitude(requestDto.getCurrentLongitude());
@@ -271,6 +279,33 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
+    public MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        validateAgentOwnership(agent, currentUser);
+
+        ActiveDelivery activeDelivery = activeDeliveryRepository.findByOrderId(requestDto.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Active delivery not found for order ID: " + requestDto.getOrderId()
+                ));
+
+        if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
+            throw new UnauthorizedActionException("This order is not assigned to the given agent");
+        }
+
+        if (activeDelivery.getStatus() != DeliveryStatus.ASSIGNED) {
+            throw new BadRequestException("Delivery can only be picked up from ASSIGNED status");
+        }
+
+        activeDelivery.setStatus(DeliveryStatus.PICKED_UP);
+        activeDeliveryRepository.save(activeDelivery);
+
+        log.info("Delivery picked up for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
+        return new MessageResponseDto(
+                "Order " + requestDto.getOrderId() + " marked as picked up by agent " + requestDto.getAgentId()
+        );
+    }
+
+    @Override
     public MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
@@ -282,6 +317,10 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
             throw new UnauthorizedActionException("This order is not assigned to the given agent");
+        }
+
+        if (activeDelivery.getStatus() != DeliveryStatus.PICKED_UP) {
+            throw new BadRequestException("Delivery must be picked up before it can be completed");
         }
 
         activeDelivery.setStatus(DeliveryStatus.DELIVERED);
@@ -335,6 +374,20 @@ public class DeliveryServiceImpl implements DeliveryService {
     private void validateAgentOwnership(DeliveryAgent agent, UserPrincipal currentUser) {
         if (!agent.getUserId().equals(currentUser.getUserId())) {
             throw new UnauthorizedActionException("You are not allowed to perform this action");
+        }
+    }
+
+    private void validateCoordinates(BigDecimal latitude, BigDecimal longitude) {
+        if (latitude == null || longitude == null) {
+            throw new BadRequestException("Latitude and longitude are required");
+        }
+
+        if (latitude.compareTo(BigDecimal.valueOf(-90)) < 0 || latitude.compareTo(BigDecimal.valueOf(90)) > 0) {
+            throw new BadRequestException("Latitude must be between -90 and 90");
+        }
+
+        if (longitude.compareTo(BigDecimal.valueOf(-180)) < 0 || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
+            throw new BadRequestException("Longitude must be between -180 and 180");
         }
     }
 
