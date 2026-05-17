@@ -1,0 +1,75 @@
+services:
+  eureka-server:
+    build: ./eurekaserver
+    ports:
+      - "8761:8761"
+
+  api-gateway:
+    build: ./apigateway
+    ports:
+      - "9090:9090"
+    depends_on:
+      - eureka-server
+
+  auth-service:
+    build: ./authservice
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+
+  restaurant-service:
+    build: ./restaurantservice
+    ports:
+      - "8081:8081"
+    depends_on:
+      - eureka-server
+
+  menu-service:
+    build: ./menuservice
+    ports:
+      - "8082:8082"
+    depends_on:
+      - eureka-server
+
+  cart-service:
+    build: ./cartservice
+    ports:
+      - "8083:8083"
+    depends_on:
+      - eureka-server
+
+  order-service:
+    build: ./orderservice
+    ports:
+      - "8084:8084"
+    depends_on:
+      - eureka-server
+
+  payment-service:
+    build: ./paymentservice
+    ports:
+      - "8085:8085"
+    depends_on:
+      - eureka-server
+
+  delivery-service:
+    build: ./deliveryservice
+    ports:
+      - "8086:8086"
+    depends_on:
+      - eureka-server
+
+  review-service:
+    build: ./reviewservice
+    ports:
+      - "8087:8087"
+    depends_on:
+      - eureka-server
+
+  notification-service:
+    build: ./notificationservice
+    ports:
+      - "8088:8088"
+    depends_on:
+      - eureka-server
