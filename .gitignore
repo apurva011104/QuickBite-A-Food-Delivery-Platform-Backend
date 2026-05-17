@@ -1,16 +1,2 @@
 .vscode
-<<<<<<< HEAD
-=======
-authservice/*
-restaurantservice/*
-menuservice/*
-cartservice/*
-paymentservice/*
-deliveryservice/*
-reviewservice/*
-notificationservice/*
-quickbiteweb/*
-eurekaserver/*
-apigateway/*
->>>>>>> feature/order-service
 .env
