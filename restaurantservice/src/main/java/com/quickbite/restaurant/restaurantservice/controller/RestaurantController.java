@@ -16,9 +16,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantApprovalRequestDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.OwnerRestaurantDetailsResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.service.RestaurantService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/restaurants")
@@ -40,6 +44,12 @@ public class RestaurantController {
     @GetMapping("/owner/my")
     public ResponseEntity<List<RestaurantResponseDto>> getMyRestaurants() {
         return ResponseEntity.ok(service.getByOwner());
+    }
+
+    @GetMapping("/owner/details/{id}")
+    public ResponseEntity<OwnerRestaurantDetailsResponseDto> getOwnerRestaurantDetails(@PathVariable Long id,
+                                                                                       HttpServletRequest request) {
+        return ResponseEntity.ok(service.getOwnerRestaurantDetails(id, extractAuthorizationHeader(request)));
     }
 
     //Update Restaurant
@@ -130,5 +140,18 @@ public class RestaurantController {
             @RequestParam Double rating) {
 
         return ResponseEntity.ok(service.updateRating(id, rating));
+    }
+
+    @GetMapping("/internal/{id}/owner")
+    public ResponseEntity<RestaurantOwnerResponseDto> getOwnerInfo(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getRestaurantOwnerInfo(id));
+    }
+
+    private String extractAuthorizationHeader(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || header.isBlank()) {
+            throw new RuntimeException("Missing Authorization header");
+        }
+        return header;
     }
 }

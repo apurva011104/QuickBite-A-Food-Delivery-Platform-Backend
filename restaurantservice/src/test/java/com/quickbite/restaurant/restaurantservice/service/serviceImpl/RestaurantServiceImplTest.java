@@ -22,9 +22,13 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.OwnerRestaurantDetailsResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOrderResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.entity.Restaurant;
 import com.quickbite.restaurant.restaurantservice.event.NotificationEvent;
+import com.quickbite.restaurant.restaurantservice.external.order.client.OrderClient;
 import com.quickbite.restaurant.restaurantservice.repository.RestaurantRepository;
 import com.quickbite.restaurant.restaurantservice.security.UserPrincipal;
 import com.quickbite.restaurant.restaurantservice.service.NotificationEventPublisher;
@@ -37,6 +41,9 @@ class RestaurantServiceImplTest {
 
     @Mock
     private NotificationEventPublisher notificationEventPublisher;
+
+    @Mock
+    private OrderClient orderClient;
 
     @InjectMocks
     private RestaurantServiceImpl restaurantService;
@@ -207,6 +214,45 @@ class RestaurantServiceImplTest {
         assertThatThrownBy(() -> restaurantService.getByOwner())
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Unauthorized access");
+    }
+
+    @Test
+    void getOwnerRestaurantDetailsShouldReturnRestaurantWithOrders() {
+        Restaurant restaurant = new Restaurant();
+        restaurant.setRestaurantId(60L);
+        restaurant.setOwnerId(7L);
+        restaurant.setName("Order House");
+        restaurant.setApproved(true);
+
+        RestaurantOrderResponseDto order = new RestaurantOrderResponseDto();
+        order.setOrderId(501L);
+        order.setOrderStatus("CONFIRMED");
+
+        when(repository.findByRestaurantIdAndOwnerId(60L, 7L)).thenReturn(Optional.of(restaurant));
+        when(orderClient.getOrdersByRestaurant(60L, "Bearer owner-token")).thenReturn(List.of(order));
+
+        OwnerRestaurantDetailsResponseDto response =
+                restaurantService.getOwnerRestaurantDetails(60L, "Bearer owner-token");
+
+        assertThat(response.getRestaurant().getRestaurantId()).isEqualTo(60L);
+        assertThat(response.getOrders()).hasSize(1);
+        assertThat(response.getOrders().get(0).getOrderId()).isEqualTo(501L);
+    }
+
+    @Test
+    void getRestaurantOwnerInfoShouldReturnOwnerPayload() {
+        Restaurant restaurant = new Restaurant();
+        restaurant.setRestaurantId(70L);
+        restaurant.setOwnerId(17L);
+        restaurant.setName("Owner Lookup");
+
+        when(repository.findById(70L)).thenReturn(Optional.of(restaurant));
+
+        RestaurantOwnerResponseDto response = restaurantService.getRestaurantOwnerInfo(70L);
+
+        assertThat(response.getRestaurantId()).isEqualTo(70L);
+        assertThat(response.getOwnerId()).isEqualTo(17L);
+        assertThat(response.getName()).isEqualTo("Owner Lookup");
     }
 
     private void setAuthenticatedUser(Long userId, String email, String role) {

@@ -3,6 +3,8 @@ package com.quickbite.restaurant.restaurantservice.service;
 import java.util.List;
 
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.OwnerRestaurantDetailsResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 
 public interface RestaurantService {
@@ -10,6 +12,7 @@ public interface RestaurantService {
     //Owner methods
     RestaurantResponseDto registerRestaurant(RestaurantRequestDto request);
     List<RestaurantResponseDto> getByOwner();
+    OwnerRestaurantDetailsResponseDto getOwnerRestaurantDetails(Long id, String authorizationHeader);
     RestaurantResponseDto updateRestaurant(Long id, RestaurantRequestDto request);
     RestaurantResponseDto toggleOpen(Long id);
     void deleteRestaurant(Long id);
@@ -28,5 +31,6 @@ public interface RestaurantService {
 
     //System methods 
     RestaurantResponseDto updateRating(Long id, Double rating);
+    RestaurantOwnerResponseDto getRestaurantOwnerInfo(Long id);
 
 }

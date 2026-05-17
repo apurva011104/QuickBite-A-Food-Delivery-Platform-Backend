@@ -9,9 +9,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.quickbite.restaurant.restaurantservice.dto.requestDto.RestaurantRequestDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.OwnerRestaurantDetailsResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOrderResponseDto;
+import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.restaurant.restaurantservice.dto.responseDto.RestaurantResponseDto;
 import com.quickbite.restaurant.restaurantservice.entity.Restaurant;
 import com.quickbite.restaurant.restaurantservice.event.NotificationEvent;
+import com.quickbite.restaurant.restaurantservice.external.order.client.OrderClient;
 import com.quickbite.restaurant.restaurantservice.mapper.RestaurantMapper;
 import com.quickbite.restaurant.restaurantservice.repository.RestaurantRepository;
 import com.quickbite.restaurant.restaurantservice.security.UserPrincipal;
@@ -29,6 +33,9 @@ public class RestaurantServiceImpl implements RestaurantService {
 
     @Autowired
     private NotificationEventPublisher notificationEventPublisher;
+
+    @Autowired
+    private OrderClient orderClient;
 
     @Override
     @Transactional
@@ -68,6 +75,16 @@ public class RestaurantServiceImpl implements RestaurantService {
                 .stream()
                 .map(RestaurantMapper::mapToDto)
                 .toList();
+    }
+
+    @Override
+    public OwnerRestaurantDetailsResponseDto getOwnerRestaurantDetails(Long id, String authorizationHeader) {
+        UserPrincipal user = getCurrentUser();
+        Restaurant restaurant = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
+                .orElseThrow(() -> new RuntimeException("Restaurant not found or access denied"));
+
+        List<RestaurantOrderResponseDto> orders = orderClient.getOrdersByRestaurant(id, authorizationHeader);
+        return new OwnerRestaurantDetailsResponseDto(RestaurantMapper.mapToDto(restaurant), orders);
     }
 
     @Override
@@ -247,6 +264,17 @@ public class RestaurantServiceImpl implements RestaurantService {
                 id, updated.getAvgRating(), updated.getRatingCount());
 
         return RestaurantMapper.mapToDto(updated);
+    }
+
+    @Override
+    public RestaurantOwnerResponseDto getRestaurantOwnerInfo(Long id) {
+        Restaurant restaurant = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Restaurant not found"));
+        return new RestaurantOwnerResponseDto(
+                restaurant.getRestaurantId(),
+                restaurant.getOwnerId(),
+                restaurant.getName()
+        );
     }
 
     private UserPrincipal getCurrentUser() {
