@@ -16,6 +16,8 @@ public class OrderMapper {
         order.setDiscount(dto.getDiscount());
         order.setPaymentMode(dto.getPaymentMode());
         order.setDeliveryAddress(dto.getDeliveryAddress());
+        order.setDeliveryLatitude(dto.getDeliveryLatitude());
+        order.setDeliveryLongitude(dto.getDeliveryLongitude());
         order.setSpecialInstructions(dto.getSpecialInstructions());
         for(OrderItemRequestDto item: dto.getItems()){
             order.addItem( OrderItemMapper.dtoToEntity(item));
@@ -40,6 +42,8 @@ public class OrderMapper {
                                     order.getOrderStatus(),
                                     order.getOrderDate(),
                                     order.getDeliveryAddress(),
+                                    order.getDeliveryLatitude(),
+                                    order.getDeliveryLongitude(),
                                     order.getEstimatedDelivery(),
                                     order.getSpecialInstructions(),
                                     orderItemDtoList);

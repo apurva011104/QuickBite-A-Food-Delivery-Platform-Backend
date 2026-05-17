@@ -86,6 +86,8 @@ class OrderServiceImplTest {
                 BigDecimal.valueOf(20),
                 PaymentMode.UPI,
                 "221B Baker Street",
+                BigDecimal.valueOf(28.6139),
+                BigDecimal.valueOf(77.2090),
                 "Less spicy",
                 List.of(
                         new OrderItemRequestDto(101L, "Burger", BigDecimal.valueOf(150), 2, "No onion"),
@@ -105,6 +107,8 @@ class OrderServiceImplTest {
         order.setOrderDate(LocalDateTime.now());
         order.setEstimatedDelivery(LocalDateTime.now().plusMinutes(30));
         order.setDeliveryAddress("221B Baker Street");
+        order.setDeliveryLatitude(BigDecimal.valueOf(28.6139));
+        order.setDeliveryLongitude(BigDecimal.valueOf(77.2090));
         order.setSpecialInstructions("Less spicy");
         order.addItem(new OrderItem(order, 101L, "Burger", BigDecimal.valueOf(150), 2, "No onion"));
         order.addItem(new OrderItem(order, 102L, "Fries", BigDecimal.valueOf(50), 1, null));
@@ -153,6 +157,8 @@ class OrderServiceImplTest {
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(result.getTotalAmount()).isEqualByComparingTo("350");
         assertThat(result.getFinalAmount()).isEqualByComparingTo("330");
+        assertThat(result.getDeliveryLatitude()).isEqualByComparingTo("28.6139");
+        assertThat(result.getDeliveryLongitude()).isEqualByComparingTo("77.2090");
         verify(notificationEventPublisher, times(3)).publishOrderNotification(any(NotificationEvent.class));
     }
 
@@ -520,6 +526,8 @@ class OrderServiceImplTest {
 
         assertThat(result.getOrderId()).isEqualTo(200L);
         assertThat(result.getCustomerId()).isEqualTo(1L);
+        assertThat(result.getDeliveryLatitude()).isEqualByComparingTo("28.6139");
+        assertThat(result.getDeliveryLongitude()).isEqualByComparingTo("77.2090");
     }
 
     @Test

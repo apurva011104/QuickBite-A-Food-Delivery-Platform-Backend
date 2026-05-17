@@ -25,6 +25,8 @@ class MapperTest {
                 BigDecimal.valueOf(10),
                 PaymentMode.COD,
                 "221B Baker Street",
+                BigDecimal.valueOf(28.6139),
+                BigDecimal.valueOf(77.2090),
                 "Less spicy",
                 List.of(new OrderItemRequestDto(101L, "Burger", BigDecimal.valueOf(150), 2, "No onion"))
         );
@@ -43,8 +45,12 @@ class MapperTest {
 
         assertThat(entity.getItems()).hasSize(1);
         assertThat(entity.getItems().get(0).getOrder()).isEqualTo(entity);
+        assertThat(entity.getDeliveryLatitude()).isEqualByComparingTo("28.6139");
+        assertThat(entity.getDeliveryLongitude()).isEqualByComparingTo("77.2090");
         assertThat(response.getItems()).hasSize(1);
         assertThat(response.getFinalAmount()).isEqualByComparingTo("290");
+        assertThat(response.getDeliveryLatitude()).isEqualByComparingTo("28.6139");
+        assertThat(response.getDeliveryLongitude()).isEqualByComparingTo("77.2090");
     }
 
     @Test

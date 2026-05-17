@@ -63,6 +63,12 @@ public class Order {
     @Column(nullable=false)
     private String deliveryAddress;
 
+    @Column(nullable=false, precision = 10, scale = 7)
+    private BigDecimal deliveryLatitude;
+
+    @Column(nullable=false, precision = 10, scale = 7)
+    private BigDecimal deliveryLongitude;
+
     @Column(nullable=false)
     private LocalDateTime estimatedDelivery;
 
