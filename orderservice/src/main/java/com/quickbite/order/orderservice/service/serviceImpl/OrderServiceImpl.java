@@ -315,6 +315,8 @@ public class OrderServiceImpl implements OrderService {
         request.setDiscount(BigDecimal.ZERO);
         request.setPaymentMode(oldOrder.getPaymentMode());
         request.setDeliveryAddress(oldOrder.getDeliveryAddress());
+        request.setDeliveryLatitude(oldOrder.getDeliveryLatitude());
+        request.setDeliveryLongitude(oldOrder.getDeliveryLongitude());
         request.setSpecialInstructions(oldOrder.getSpecialInstructions());
 
         List<OrderItemRequestDto> items = oldOrder.getItems().stream().map(item ->

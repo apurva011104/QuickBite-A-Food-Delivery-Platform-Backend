@@ -148,14 +148,15 @@ class OrderControllerTest {
     }
 
     private OrderRequestDto orderRequest() {
-        return new OrderRequestDto(10L, BigDecimal.ZERO, PaymentMode.UPI, "221B Baker Street", "Less spicy",
+        return new OrderRequestDto(10L, BigDecimal.ZERO, PaymentMode.UPI, "221B Baker Street",
+                BigDecimal.valueOf(28.6139), BigDecimal.valueOf(77.2090), "Less spicy",
                 List.of(new OrderItemRequestDto(101L, "Burger", BigDecimal.valueOf(150), 2, "No onion")));
     }
 
     private OrderResponseDto orderResponse() {
         return new OrderResponseDto(100L, 1L, 10L, null, BigDecimal.valueOf(300), BigDecimal.ZERO,
                 BigDecimal.valueOf(300), PaymentMode.UPI, OrderStatus.CONFIRMED, null,
-                "221B Baker Street", null, "Less spicy",
+                "221B Baker Street", BigDecimal.valueOf(28.6139), BigDecimal.valueOf(77.2090), null, "Less spicy",
                 List.of(new OrderItemResponseDto(1L, 101L, "Burger", BigDecimal.valueOf(150), 2, "No onion")));
     }
 }

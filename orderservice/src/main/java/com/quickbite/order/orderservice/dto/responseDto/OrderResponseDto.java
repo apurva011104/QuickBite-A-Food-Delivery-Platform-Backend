@@ -37,6 +37,10 @@ public class OrderResponseDto {
 
     private String deliveryAddress;
 
+    private BigDecimal deliveryLatitude;
+
+    private BigDecimal deliveryLongitude;
+
     private LocalDateTime estimatedDelivery;
 
     private String specialInstructions;
