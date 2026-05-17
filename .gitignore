@@ -1,10 +1,2 @@
 .vscode
-authservice/*
-cartservice/*
-notificationservice/*
-restaurantservice/*
-menuservice/*
-deliveryservice/*
-orderservice/*
-paymentservice/*
-reviewservice/*
+.env
