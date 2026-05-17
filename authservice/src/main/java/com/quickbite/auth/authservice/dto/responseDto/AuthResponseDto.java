@@ -12,6 +12,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class AuthResponseDto {
+
+    @NotNull
+    private Long id;
     
     @NotNull
     private String name;
