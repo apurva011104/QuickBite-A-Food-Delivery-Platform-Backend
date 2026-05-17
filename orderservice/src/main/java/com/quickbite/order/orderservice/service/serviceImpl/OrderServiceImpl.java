@@ -217,6 +217,7 @@ public class OrderServiceImpl implements OrderService {
                 OrderStatus.PAYMENT_PENDING,
                 OrderStatus.CONFIRMED,
                 OrderStatus.PREPARING,
+                OrderStatus.READY_FOR_PICKUP,
                 OrderStatus.PICKED_UP
         );
 
@@ -228,17 +229,19 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus newStatus) {
+    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus newStatus, UserPrincipal currentUser) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
+        validateStatusUpdateAccess(order, newStatus, currentUser);
         validateStatusTransition(order.getOrderStatus(), newStatus);
 
+        OrderStatus previousStatus = order.getOrderStatus();
         order.setOrderStatus(newStatus);
         Order updated = orderRepository.save(order);
 
         log.info("Order status updated orderId={} from={} to={}",
-                orderId, order.getOrderStatus(), newStatus);
+                orderId, previousStatus, newStatus);
 
         return OrderMapper.entityToDto(updated);
     }
@@ -346,7 +349,8 @@ public class OrderServiceImpl implements OrderService {
                     || newStatus == OrderStatus.CANCELLED;
             case PAYMENT_PENDING -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.CANCELLED;
             case CONFIRMED -> newStatus == OrderStatus.PREPARING || newStatus == OrderStatus.CANCELLED;
-            case PREPARING -> newStatus == OrderStatus.PICKED_UP;
+            case PREPARING -> newStatus == OrderStatus.READY_FOR_PICKUP;
+            case READY_FOR_PICKUP -> newStatus == OrderStatus.PICKED_UP;
             case PICKED_UP -> newStatus == OrderStatus.DELIVERED;
             default -> false;
         };
@@ -400,6 +404,22 @@ public class OrderServiceImpl implements OrderService {
         RestaurantOwnerResponseDto restaurant = restaurantClient.getOwnerInfo(restaurantId);
         if (restaurant == null || !currentUser.getUserId().equals(restaurant.getOwnerId())) {
             throw new UnauthorizedActionException("You are not allowed to view orders for this restaurant");
+        }
+    }
+
+    private void validateStatusUpdateAccess(Order order, OrderStatus newStatus, UserPrincipal currentUser) {
+        if ("ADMIN".equals(currentUser.getRole()) || "AGENT".equals(currentUser.getRole())) {
+            return;
+        }
+
+        if (!"OWNER".equals(currentUser.getRole())) {
+            throw new UnauthorizedActionException("You are not allowed to update this order");
+        }
+
+        validateRestaurantOwnerAccess(order.getRestaurantId(), currentUser);
+
+        if (newStatus != OrderStatus.PREPARING && newStatus != OrderStatus.READY_FOR_PICKUP) {
+            throw new UnauthorizedActionException("Owners can only move orders to PREPARING or READY_FOR_PICKUP");
         }
     }
 

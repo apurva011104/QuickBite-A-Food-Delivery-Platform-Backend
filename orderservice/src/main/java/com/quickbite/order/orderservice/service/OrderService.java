@@ -19,7 +19,7 @@ public interface OrderService {
 
     List<OrderResponseDto> getActiveOrders();
 
-    OrderResponseDto updateOrderStatus(Long orderId, OrderStatus status);
+    OrderResponseDto updateOrderStatus(Long orderId, OrderStatus status, UserPrincipal currentUser);
 
     OrderResponseDto assignDeliveryAgent(Long orderId, Long agentId);
 
