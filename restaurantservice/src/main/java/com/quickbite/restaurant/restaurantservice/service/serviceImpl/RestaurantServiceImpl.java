@@ -41,6 +41,7 @@ public class RestaurantServiceImpl implements RestaurantService {
     @Transactional
     public RestaurantResponseDto registerRestaurant(RestaurantRequestDto request) {
         UserPrincipal user = getCurrentUser();
+        validateRestaurantLocation(request, true);
 
         Restaurant restaurant = RestaurantMapper.mapToEntity(request);
         restaurant.setOwnerId(user.getUserId());
@@ -95,6 +96,7 @@ public class RestaurantServiceImpl implements RestaurantService {
         Restaurant restaurant = repository.findByRestaurantIdAndOwnerId(id, user.getUserId())
                 .orElseThrow(() -> new RuntimeException("Restaurant not found or access denied"));
 
+        validateRestaurantLocation(request, false);
         updateEntity(restaurant, request);
 
         Restaurant updated = repository.save(restaurant);
@@ -299,6 +301,31 @@ public class RestaurantServiceImpl implements RestaurantService {
         if (dto.getDeliveryRadius() != null) restaurant.setDeliveryRadius(dto.getDeliveryRadius());
         if (dto.getMinOrderAmount() != null) restaurant.setMinOrderAmount(dto.getMinOrderAmount());
         if (dto.getEstimatedDeliveryMin() != null) restaurant.setEstimatedDeliveryMin(dto.getEstimatedDeliveryMin());
+    }
+
+    private void validateRestaurantLocation(RestaurantRequestDto request, boolean locationRequired) {
+        Double latitude = request.getLatitude();
+        Double longitude = request.getLongitude();
+
+        if (locationRequired && (latitude == null || longitude == null)) {
+            throw new RuntimeException("Restaurant location is required");
+        }
+
+        if (latitude == null && longitude == null) {
+            return;
+        }
+
+        if (latitude == null || longitude == null) {
+            throw new RuntimeException("Latitude and longitude must be provided together");
+        }
+
+        if (latitude < -90 || latitude > 90) {
+            throw new RuntimeException("Latitude must be between -90 and 90");
+        }
+
+        if (longitude < -180 || longitude > 180) {
+            throw new RuntimeException("Longitude must be between -180 and 180");
+        }
     }
 
     private double distance(double lat1, double lon1, double lat2, double lon2) {

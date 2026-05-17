@@ -98,6 +98,29 @@ class RestaurantServiceImplTest {
     }
 
     @Test
+    void registerRestaurantShouldRejectMissingLocation() {
+        RestaurantRequestDto request = new RestaurantRequestDto(
+                "Spice Route",
+                "Classic North Indian",
+                "Indian",
+                "MG Road",
+                "Bengaluru",
+                null,
+                null,
+                "9999999999",
+                7.5,
+                199.0,
+                35
+        );
+
+        assertThatThrownBy(() -> restaurantService.registerRestaurant(request))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Restaurant location is required");
+
+        verify(repository, never()).save(any(Restaurant.class));
+    }
+
+    @Test
     void toggleOpenShouldRejectUnapprovedRestaurant() {
         Restaurant restaurant = new Restaurant();
         restaurant.setRestaurantId(10L);
@@ -205,6 +228,25 @@ class RestaurantServiceImplTest {
         assertThat(response.getName()).isEqualTo("New Name");
         assertThat(restaurant.getCity()).isEqualTo("Mumbai");
         assertThat(restaurant.getPhone()).isEqualTo("2222222222");
+    }
+
+    @Test
+    void updateRestaurantShouldRejectPartialLocationUpdates() {
+        Restaurant restaurant = new Restaurant();
+        restaurant.setRestaurantId(50L);
+        restaurant.setOwnerId(7L);
+        restaurant.setName("Old Name");
+
+        RestaurantRequestDto updateRequest = new RestaurantRequestDto();
+        updateRequest.setLatitude(12.9716);
+
+        when(repository.findByRestaurantIdAndOwnerId(50L, 7L)).thenReturn(Optional.of(restaurant));
+
+        assertThatThrownBy(() -> restaurantService.updateRestaurant(50L, updateRequest))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Latitude and longitude must be provided together");
+
+        verify(repository, never()).save(any(Restaurant.class));
     }
 
     @Test
