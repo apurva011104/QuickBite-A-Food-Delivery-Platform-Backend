@@ -112,6 +112,15 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.assignOrder(requestDto));
     }
 
+    @PostMapping("/pickup-delivery")
+    public ResponseEntity<MessageResponseDto> pickupDelivery(
+            @Valid @RequestBody PickupDeliveryRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Pickup delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
+        return ResponseEntity.ok(deliveryService.pickupDelivery(currentUser, requestDto));
+    }
+
     @PostMapping("/complete-delivery")
     public ResponseEntity<MessageResponseDto> completeDelivery(
             @Valid @RequestBody CompleteDeliveryRequestDto requestDto,

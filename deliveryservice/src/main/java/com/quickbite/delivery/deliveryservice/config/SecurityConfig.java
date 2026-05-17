@@ -40,17 +40,18 @@ public class SecurityConfig {
 
                         .requestMatchers(HttpMethod.PUT, "/api/v1/agents/*/location").hasRole("AGENT")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/agents/*/availability").hasRole("AGENT")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/agents/pickup-delivery").hasRole("AGENT")
                         .requestMatchers(HttpMethod.POST, "/api/v1/agents/complete-delivery").hasRole("AGENT")
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/*/active-deliveries").hasAnyRole("AGENT", "ADMIN")
 
                         .requestMatchers(HttpMethod.PUT, "/api/v1/agents/*/verify").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/verified").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/agents/assign-order").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/available").hasAnyRole("ADMIN", "OWNER")
 
                         // temporary internal/business endpoints
-                        .requestMatchers(HttpMethod.GET, "/api/v1/agents/nearby").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/agents/nearby").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/agents/*/rating").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/agents/assign-order").permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/*").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/user/*").authenticated()
