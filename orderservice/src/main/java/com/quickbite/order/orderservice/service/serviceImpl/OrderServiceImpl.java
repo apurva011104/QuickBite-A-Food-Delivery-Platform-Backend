@@ -14,6 +14,7 @@ import com.quickbite.order.orderservice.dto.requestDto.PaymentRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.OrderResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentStatus;
+import com.quickbite.order.orderservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.order.orderservice.entity.Order;
 import com.quickbite.order.orderservice.entity.OrderStatus;
 import com.quickbite.order.orderservice.entity.PaymentMode;
@@ -23,6 +24,7 @@ import com.quickbite.order.orderservice.exception.InvalidOrderStateException;
 import com.quickbite.order.orderservice.exception.OrderNotFoundException;
 import com.quickbite.order.orderservice.exception.UnauthorizedActionException;
 import com.quickbite.order.orderservice.external.payment.client.PaymentClient;
+import com.quickbite.order.orderservice.external.restaurant.client.RestaurantClient;
 import com.quickbite.order.orderservice.mapper.OrderMapper;
 import com.quickbite.order.orderservice.repository.OrderRepository;
 import com.quickbite.order.orderservice.security.UserPrincipal;
@@ -42,12 +44,17 @@ public class OrderServiceImpl implements OrderService {
     private PaymentClient paymentClient;
 
     @Autowired
+    private RestaurantClient restaurantClient;
+
+    @Autowired
     private NotificationEventPublisher notificationEventPublisher;
 
     public OrderServiceImpl(OrderRepository orderRepository,
-                            PaymentClient paymentClient) {
+                            PaymentClient paymentClient,
+                            RestaurantClient restaurantClient) {
         this.orderRepository = orderRepository;
         this.paymentClient = paymentClient;
+        this.restaurantClient = restaurantClient;
     }
 
     @Override
@@ -158,6 +165,9 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Order updated = orderRepository.save(savedOrder);
+        if (updated.getOrderStatus() != OrderStatus.CANCELLED) {
+            publishOwnerOrderReceivedNotification(updated);
+        }
         return OrderMapper.entityToDto(updated);
     }
 
@@ -191,7 +201,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId) {
+    public List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser) {
+        validateRestaurantOwnerAccess(restaurantId, currentUser);
+
         return orderRepository.findByRestaurantIdOrderByOrderDateDesc(restaurantId)
                 .stream()
                 .map(OrderMapper::entityToDto)
@@ -378,5 +390,44 @@ public class OrderServiceImpl implements OrderService {
         }
 
         return order;
+    }
+
+    private void validateRestaurantOwnerAccess(Long restaurantId, UserPrincipal currentUser) {
+        if ("ADMIN".equals(currentUser.getRole())) {
+            return;
+        }
+
+        RestaurantOwnerResponseDto restaurant = restaurantClient.getOwnerInfo(restaurantId);
+        if (restaurant == null || !currentUser.getUserId().equals(restaurant.getOwnerId())) {
+            throw new UnauthorizedActionException("You are not allowed to view orders for this restaurant");
+        }
+    }
+
+    private void publishOwnerOrderReceivedNotification(Order order) {
+        try {
+            RestaurantOwnerResponseDto restaurant = restaurantClient.getOwnerInfo(order.getRestaurantId());
+            if (restaurant == null || restaurant.getOwnerId() == null) {
+                log.warn("Skipping owner notification because restaurant owner was not resolved for restaurantId={}",
+                        order.getRestaurantId());
+                return;
+            }
+
+            notificationEventPublisher.publishOrderNotification(
+                    new NotificationEvent(
+                            "ORDER_RECEIVED",
+                            restaurant.getOwnerId(),
+                            "New Order Received",
+                            "You have received a new order #" + order.getOrderId()
+                                    + " for restaurant '" + restaurant.getName() + "'.",
+                            order.getOrderId(),
+                            "ORDER"
+                    )
+            );
+            log.info("Owner notified for orderId={} ownerId={} restaurantId={}",
+                    order.getOrderId(), restaurant.getOwnerId(), order.getRestaurantId());
+        } catch (Exception ex) {
+            log.warn("Unable to notify restaurant owner for orderId={} restaurantId={}",
+                    order.getOrderId(), order.getRestaurantId(), ex);
+        }
     }
 }

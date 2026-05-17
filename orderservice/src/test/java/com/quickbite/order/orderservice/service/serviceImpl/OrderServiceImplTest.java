@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import com.quickbite.order.orderservice.dto.requestDto.OrderRequestDto;
 import com.quickbite.order.orderservice.dto.responseDto.OrderResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentResponseDto;
 import com.quickbite.order.orderservice.dto.responseDto.PaymentStatus;
+import com.quickbite.order.orderservice.dto.responseDto.RestaurantOwnerResponseDto;
 import com.quickbite.order.orderservice.entity.Order;
 import com.quickbite.order.orderservice.entity.OrderItem;
 import com.quickbite.order.orderservice.entity.OrderStatus;
@@ -38,6 +40,7 @@ import com.quickbite.order.orderservice.exception.InvalidOrderStateException;
 import com.quickbite.order.orderservice.exception.OrderNotFoundException;
 import com.quickbite.order.orderservice.exception.UnauthorizedActionException;
 import com.quickbite.order.orderservice.external.payment.client.PaymentClient;
+import com.quickbite.order.orderservice.external.restaurant.client.RestaurantClient;
 import com.quickbite.order.orderservice.repository.OrderRepository;
 import com.quickbite.order.orderservice.security.UserPrincipal;
 import com.quickbite.order.orderservice.service.NotificationEventPublisher;
@@ -52,6 +55,9 @@ class OrderServiceImplTest {
     private PaymentClient paymentClient;
 
     @Mock
+    private RestaurantClient restaurantClient;
+
+    @Mock
     private NotificationEventPublisher notificationEventPublisher;
 
     private OrderServiceImpl orderService;
@@ -64,7 +70,7 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderServiceImpl(orderRepository, paymentClient);
+        orderService = new OrderServiceImpl(orderRepository, paymentClient, restaurantClient);
         ReflectionTestUtils.setField(orderService, "notificationEventPublisher", notificationEventPublisher);
 
         customer = new UserPrincipal(1L, "customer@quickbite.com", "CUSTOMER");
@@ -98,6 +104,12 @@ class OrderServiceImplTest {
         order.setSpecialInstructions("Less spicy");
         order.addItem(new OrderItem(order, 101L, "Burger", BigDecimal.valueOf(150), 2, "No onion"));
         order.addItem(new OrderItem(order, 102L, "Fries", BigDecimal.valueOf(50), 1, null));
+
+        RestaurantOwnerResponseDto restaurantOwner = new RestaurantOwnerResponseDto();
+        restaurantOwner.setRestaurantId(10L);
+        restaurantOwner.setOwnerId(2L);
+        restaurantOwner.setName("Test Restaurant");
+        lenient().when(restaurantClient.getOwnerInfo(10L)).thenReturn(restaurantOwner);
     }
 
     @Test
@@ -137,7 +149,7 @@ class OrderServiceImplTest {
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(result.getTotalAmount()).isEqualByComparingTo("350");
         assertThat(result.getFinalAmount()).isEqualByComparingTo("330");
-        verify(notificationEventPublisher, times(2)).publishOrderNotification(any(NotificationEvent.class));
+        verify(notificationEventPublisher, times(3)).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -158,6 +170,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.placeOrder(orderRequest, customer, "cod-token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(notificationEventPublisher, times(2)).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -177,7 +190,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.placeOrder(orderRequest, customer, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
-        verify(notificationEventPublisher, times(1)).publishOrderNotification(any(NotificationEvent.class));
+        verify(notificationEventPublisher, times(2)).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -312,9 +325,18 @@ class OrderServiceImplTest {
         when(orderRepository.countByRestaurantId(10L)).thenReturn(6L);
 
         assertThat(orderService.getOrdersByCustomer(1L, "token")).hasSize(1);
-        assertThat(orderService.getOrdersByRestaurant(10L)).hasSize(1);
+        assertThat(orderService.getOrdersByRestaurant(10L, new UserPrincipal(2L, "owner@quickbite.com", "OWNER"))).hasSize(1);
         assertThat(orderService.getActiveOrders()).hasSize(1);
         assertThat(orderService.getOrderCountByRestaurant(10L)).isEqualTo(6L);
+    }
+
+    @Test
+    void getOrdersByRestaurantShouldRejectWrongOwner() {
+        UserPrincipal wrongOwner = new UserPrincipal(99L, "owner2@quickbite.com", "OWNER");
+
+        assertThatThrownBy(() -> orderService.getOrdersByRestaurant(10L, wrongOwner))
+                .isInstanceOf(UnauthorizedActionException.class)
+                .hasMessage("You are not allowed to view orders for this restaurant");
     }
 
     @Test

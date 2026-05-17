@@ -66,7 +66,8 @@ class OrderControllerSecurityTest {
 
     @Test
     void ownerShouldAccessRestaurantEndpoint() throws Exception {
-        when(orderService.getOrdersByRestaurant(10L)).thenReturn(java.util.List.of());
+        when(orderService.getOrdersByRestaurant(org.mockito.ArgumentMatchers.eq(10L), any(UserPrincipal.class)))
+                .thenReturn(java.util.List.of());
 
         mockMvc.perform(get("/orders/restaurant/10").with(ownerPrincipal()))
                 .andExpect(status().isOk());

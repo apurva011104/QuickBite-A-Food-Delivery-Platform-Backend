@@ -15,7 +15,7 @@ public interface OrderService {
 
     List<OrderResponseDto> getOrdersByCustomer(Long customerId, String token);
 
-    List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId);
+    List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser);
 
     List<OrderResponseDto> getActiveOrders();
 
