@@ -15,13 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ForgotPasswordRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.LoginType;
+import com.quickbite.auth.authservice.dto.requestDto.ResetPasswordWithOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.ResendOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.VerifyOtpRequestDto;
 import com.quickbite.auth.authservice.dto.responseDto.AuthResponseDto;
 import com.quickbite.auth.authservice.dto.responseDto.OtpDispatchResponseDto;
 import com.quickbite.auth.authservice.entity.AuthProvider;
+import com.quickbite.auth.authservice.entity.PendingLogin;
+import com.quickbite.auth.authservice.entity.PendingPasswordReset;
 import com.quickbite.auth.authservice.entity.PendingRegistration;
 import com.quickbite.auth.authservice.entity.User;
 import com.quickbite.auth.authservice.exception.BadRequestException;
@@ -32,6 +36,8 @@ import com.quickbite.auth.authservice.exception.InvalidUserCredentialsException;
 import com.quickbite.auth.authservice.exception.ResourceNotFoundException;
 import com.quickbite.auth.authservice.exception.UserNotFoundException;
 import com.quickbite.auth.authservice.mapper.AuthMapper;
+import com.quickbite.auth.authservice.repository.PendingLoginRepository;
+import com.quickbite.auth.authservice.repository.PendingPasswordResetRepository;
 import com.quickbite.auth.authservice.repository.PendingRegistrationRepository;
 import com.quickbite.auth.authservice.repository.UserRepository;
 import com.quickbite.auth.authservice.security.TokenBlacklist;
@@ -49,6 +55,8 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final PendingRegistrationRepository pendingRegistrationRepository;
+    private final PendingLoginRepository pendingLoginRepository;
+    private final PendingPasswordResetRepository pendingPasswordResetRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final TokenBlacklist tokenBlacklist;
@@ -62,12 +70,16 @@ public class AuthServiceImpl implements AuthService {
 
     public AuthServiceImpl(UserRepository userRepository,
                            PendingRegistrationRepository pendingRegistrationRepository,
+                           PendingLoginRepository pendingLoginRepository,
+                           PendingPasswordResetRepository pendingPasswordResetRepository,
                            PasswordEncoder passwordEncoder,
                            JwtUtil jwtUtil,
                            TokenBlacklist tokenBlacklist,
                            OtpNotificationService otpNotificationService) {
         this.userRepository = userRepository;
         this.pendingRegistrationRepository = pendingRegistrationRepository;
+        this.pendingLoginRepository = pendingLoginRepository;
+        this.pendingPasswordResetRepository = pendingPasswordResetRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.tokenBlacklist = tokenBlacklist;
@@ -88,16 +100,11 @@ public class AuthServiceImpl implements AuthService {
         PendingRegistration pendingRegistration = buildPendingRegistration(request, rawOtp);
 
         pendingRegistrationRepository.save(pendingRegistration);
-        try {
-            otpNotificationService.sendSignupOtp(
-                    pendingRegistration.getName(),
-                    pendingRegistration.getEmail(),
-                    rawOtp
-            );
-        } catch (RuntimeException ex) {
-            pendingRegistrationRepository.delete(pendingRegistration);
-            throw ex;
-        }
+        otpNotificationService.sendRegistrationOtp(
+                pendingRegistration.getName(),
+                pendingRegistration.getEmail(),
+                rawOtp
+        );
 
         log.info("Registration OTP created. verificationId={} email={} phone={}",
                 pendingRegistration.getVerificationId(),
@@ -107,7 +114,7 @@ public class AuthServiceImpl implements AuthService {
         return buildOtpDispatchResponse(
                 pendingRegistration.getVerificationId(),
                 pendingRegistration.getEmail(),
-                "Verification code sent to your email address."
+                "Verification code is on its way to your email address. It may take a few moments to arrive."
         );
     }
 
@@ -184,7 +191,7 @@ public class AuthServiceImpl implements AuthService {
         pendingRegistration.setFailedAttempts(0);
 
         pendingRegistrationRepository.save(pendingRegistration);
-        otpNotificationService.sendSignupOtp(
+        otpNotificationService.sendRegistrationOtp(
                 pendingRegistration.getName(),
                 pendingRegistration.getEmail(),
                 rawOtp
@@ -197,41 +204,214 @@ public class AuthServiceImpl implements AuthService {
         return buildOtpDispatchResponse(
                 pendingRegistration.getVerificationId(),
                 pendingRegistration.getEmail(),
-                "A fresh verification code has been sent to your email address."
+                "A fresh verification code is on its way to your email address."
         );
     }
 
     @Override
-    public AuthResponseDto login(LoginRequestDto request) throws Exception {
-        if (request.getLoginType() == LoginType.EMAIL) {
-            String email = request.getIdentifier();
-            ValidatorUtility.validateEmail(email);
+    @Transactional
+    public OtpDispatchResponseDto requestLoginOtp(LoginRequestDto request) throws Exception {
+        cleanupExpiredPendingLogins();
 
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new UserNotFoundException("User not found for " + email));
+        User user = resolveUserForLogin(request);
+        ensureUserCanLogin(user, request.getPassword());
+        clearExistingPendingLogins(user.getId());
 
-            ensureUserCanLogin(user, request.getPassword());
+        String rawOtp = generateOtp();
+        PendingLogin pendingLogin = buildPendingLogin(user, rawOtp);
 
-            String accessToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().toString());
-            log.info("Login successful by email. userId={} email={}", user.getId(), user.getEmail());
-            return AuthMapper.userToAuthResponse(user, accessToken);
+        pendingLoginRepository.save(pendingLogin);
+        otpNotificationService.sendLoginOtp(user.getName(), user.getEmail(), rawOtp);
+
+        log.info("Login OTP created. verificationId={} userId={} email={}",
+                pendingLogin.getVerificationId(),
+                user.getId(),
+                user.getEmail());
+
+        return buildOtpDispatchResponse(
+                pendingLogin.getVerificationId(),
+                user.getEmail(),
+                "Login verification code is on its way to your email address. It may take a few moments to arrive."
+        );
+    }
+
+    @Override
+    @Transactional
+    public AuthResponseDto verifyLoginOtp(VerifyOtpRequestDto request) {
+        cleanupExpiredPendingLogins();
+
+        PendingLogin pendingLogin = getPendingLoginOrThrow(request.getVerificationId());
+
+        if (pendingLogin.getExpiresAt().isBefore(LocalDateTime.now())) {
+            pendingLoginRepository.delete(pendingLogin);
+            throw new BadRequestException("Verification code expired. Please log in again.");
         }
 
-        if (request.getLoginType() == LoginType.PHONE) {
-            String phoneNumber = request.getIdentifier();
-            ValidatorUtility.validatePhoneNumber(phoneNumber);
+        if (!passwordEncoder.matches(request.getOtp(), pendingLogin.getOtpHash())) {
+            int updatedAttempts = pendingLogin.getFailedAttempts() + 1;
+            pendingLogin.setFailedAttempts(updatedAttempts);
 
-            User user = userRepository.findByPhoneNumber(phoneNumber)
-                    .orElseThrow(() -> new UserNotFoundException("User not found for " + phoneNumber));
+            if (updatedAttempts >= otpMaxAttempts) {
+                pendingLoginRepository.delete(pendingLogin);
+                throw new BadRequestException("Maximum OTP attempts exceeded. Please log in again.");
+            }
 
-            ensureUserCanLogin(user, request.getPassword());
-
-            String accessToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().toString());
-            log.info("Login successful by phone. userId={} phone={}", user.getId(), phoneNumber);
-            return AuthMapper.userToAuthResponse(user, accessToken);
+            pendingLoginRepository.save(pendingLogin);
+            throw new BadRequestException(
+                    "Invalid verification code. " + (otpMaxAttempts - updatedAttempts) + " attempt(s) remaining."
+            );
         }
 
-        throw new IllegalArgumentException("Invalid login type");
+        User user = userRepository.findById(pendingLogin.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        ensureOtpLoginAllowed(user);
+
+        pendingLoginRepository.delete(pendingLogin);
+
+        String accessToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().toString());
+        log.info("Login completed after OTP verification. userId={} email={}", user.getId(), user.getEmail());
+
+        return AuthMapper.userToAuthResponse(user, accessToken);
+    }
+
+    @Override
+    @Transactional
+    public OtpDispatchResponseDto resendLoginOtp(ResendOtpRequestDto request) {
+        cleanupExpiredPendingLogins();
+
+        PendingLogin pendingLogin = getPendingLoginOrThrow(request.getVerificationId());
+
+        if (pendingLogin.getExpiresAt().isBefore(LocalDateTime.now())) {
+            pendingLoginRepository.delete(pendingLogin);
+            throw new BadRequestException("Verification code expired. Please log in again.");
+        }
+
+        User user = userRepository.findById(pendingLogin.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        ensureOtpLoginAllowed(user);
+
+        String rawOtp = generateOtp();
+        pendingLogin.setOtpHash(passwordEncoder.encode(rawOtp));
+        pendingLogin.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
+        pendingLogin.setFailedAttempts(0);
+
+        pendingLoginRepository.save(pendingLogin);
+        otpNotificationService.sendLoginOtp(user.getName(), user.getEmail(), rawOtp);
+
+        log.info("Login OTP resent. verificationId={} userId={} email={}",
+                pendingLogin.getVerificationId(),
+                user.getId(),
+                user.getEmail());
+
+        return buildOtpDispatchResponse(
+                pendingLogin.getVerificationId(),
+                user.getEmail(),
+                "A fresh login verification code is on its way to your email address."
+        );
+    }
+
+    @Override
+    @Transactional
+    public OtpDispatchResponseDto requestPasswordResetOtp(ForgotPasswordRequestDto request) throws Exception {
+        cleanupExpiredPendingPasswordResets();
+
+        User user = resolveUserForIdentifier(request.getIdentifier(), request.getLoginType());
+        ensurePasswordResetAllowed(user);
+        clearExistingPendingPasswordResets(user.getId());
+
+        String rawOtp = generateOtp();
+        PendingPasswordReset pendingPasswordReset = buildPendingPasswordReset(user, rawOtp);
+
+        pendingPasswordResetRepository.save(pendingPasswordReset);
+        otpNotificationService.sendPasswordResetOtp(user.getName(), user.getEmail(), rawOtp);
+
+        log.info("Password reset OTP created. verificationId={} userId={} email={}",
+                pendingPasswordReset.getVerificationId(),
+                user.getId(),
+                user.getEmail());
+
+        return buildOtpDispatchResponse(
+                pendingPasswordReset.getVerificationId(),
+                user.getEmail(),
+                "Password reset code is on its way to your email address. It may take a few moments to arrive."
+        );
+    }
+
+    @Override
+    @Transactional
+    public String verifyPasswordResetOtp(ResetPasswordWithOtpRequestDto request) throws InvalidPasswordException {
+        cleanupExpiredPendingPasswordResets();
+
+        PendingPasswordReset pendingPasswordReset = getPendingPasswordResetOrThrow(request.getVerificationId());
+
+        if (pendingPasswordReset.getExpiresAt().isBefore(LocalDateTime.now())) {
+            pendingPasswordResetRepository.delete(pendingPasswordReset);
+            throw new BadRequestException("Verification code expired. Please request a new password reset OTP.");
+        }
+
+        if (!passwordEncoder.matches(request.getOtp(), pendingPasswordReset.getOtpHash())) {
+            int updatedAttempts = pendingPasswordReset.getFailedAttempts() + 1;
+            pendingPasswordReset.setFailedAttempts(updatedAttempts);
+
+            if (updatedAttempts >= otpMaxAttempts) {
+                pendingPasswordResetRepository.delete(pendingPasswordReset);
+                throw new BadRequestException("Maximum OTP attempts exceeded. Please request a new password reset OTP.");
+            }
+
+            pendingPasswordResetRepository.save(pendingPasswordReset);
+            throw new BadRequestException(
+                    "Invalid verification code. " + (otpMaxAttempts - updatedAttempts) + " attempt(s) remaining."
+            );
+        }
+
+        ValidatorUtility.validatePassword(request.getNewPassword());
+
+        User user = userRepository.findById(pendingPasswordReset.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        ensurePasswordResetAllowed(user);
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        pendingPasswordResetRepository.delete(pendingPasswordReset);
+
+        log.info("Password reset completed. userId={} email={}", user.getId(), user.getEmail());
+        return "Password reset successfully";
+    }
+
+    @Override
+    @Transactional
+    public OtpDispatchResponseDto resendPasswordResetOtp(ResendOtpRequestDto request) {
+        cleanupExpiredPendingPasswordResets();
+
+        PendingPasswordReset pendingPasswordReset = getPendingPasswordResetOrThrow(request.getVerificationId());
+
+        if (pendingPasswordReset.getExpiresAt().isBefore(LocalDateTime.now())) {
+            pendingPasswordResetRepository.delete(pendingPasswordReset);
+            throw new BadRequestException("Verification code expired. Please start the password reset flow again.");
+        }
+
+        User user = userRepository.findById(pendingPasswordReset.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        ensurePasswordResetAllowed(user);
+
+        String rawOtp = generateOtp();
+        pendingPasswordReset.setOtpHash(passwordEncoder.encode(rawOtp));
+        pendingPasswordReset.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
+        pendingPasswordReset.setFailedAttempts(0);
+
+        pendingPasswordResetRepository.save(pendingPasswordReset);
+        otpNotificationService.sendPasswordResetOtp(user.getName(), user.getEmail(), rawOtp);
+
+        log.info("Password reset OTP resent. verificationId={} userId={} email={}",
+                pendingPasswordReset.getVerificationId(),
+                user.getId(),
+                user.getEmail());
+
+        return buildOtpDispatchResponse(
+                pendingPasswordReset.getVerificationId(),
+                user.getEmail(),
+                "A fresh password reset code is on its way to your email address."
+        );
     }
 
     @Override
@@ -362,19 +542,75 @@ public class AuthServiceImpl implements AuthService {
         return pendingRegistration;
     }
 
+    private PendingLogin buildPendingLogin(User user, String rawOtp) {
+        PendingLogin pendingLogin = new PendingLogin();
+        pendingLogin.setVerificationId(UUID.randomUUID().toString());
+        pendingLogin.setUserId(user.getId());
+        pendingLogin.setEmail(user.getEmail());
+        pendingLogin.setOtpHash(passwordEncoder.encode(rawOtp));
+        pendingLogin.setCreatedAt(LocalDateTime.now());
+        pendingLogin.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
+        pendingLogin.setFailedAttempts(0);
+        return pendingLogin;
+    }
+
+    private PendingPasswordReset buildPendingPasswordReset(User user, String rawOtp) {
+        PendingPasswordReset pendingPasswordReset = new PendingPasswordReset();
+        pendingPasswordReset.setVerificationId(UUID.randomUUID().toString());
+        pendingPasswordReset.setUserId(user.getId());
+        pendingPasswordReset.setEmail(user.getEmail());
+        pendingPasswordReset.setOtpHash(passwordEncoder.encode(rawOtp));
+        pendingPasswordReset.setCreatedAt(LocalDateTime.now());
+        pendingPasswordReset.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
+        pendingPasswordReset.setFailedAttempts(0);
+        return pendingPasswordReset;
+    }
+
     private PendingRegistration getPendingRegistrationOrThrow(String verificationId) {
         return pendingRegistrationRepository.findById(verificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pending registration not found"));
+    }
+
+    private PendingLogin getPendingLoginOrThrow(String verificationId) {
+        return pendingLoginRepository.findById(verificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pending login not found"));
+    }
+
+    private PendingPasswordReset getPendingPasswordResetOrThrow(String verificationId) {
+        return pendingPasswordResetRepository.findById(verificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pending password reset not found"));
     }
 
     private void cleanupExpiredPendingRegistrations() {
         pendingRegistrationRepository.deleteAllByExpiresAtBefore(LocalDateTime.now());
     }
 
+    private void cleanupExpiredPendingLogins() {
+        pendingLoginRepository.deleteAllByExpiresAtBefore(LocalDateTime.now());
+    }
+
+    private void cleanupExpiredPendingPasswordResets() {
+        pendingPasswordResetRepository.deleteAllByExpiresAtBefore(LocalDateTime.now());
+    }
+
     private void clearExistingPendingRegistrations(String email, String phoneNumber) {
         List<PendingRegistration> duplicates = pendingRegistrationRepository.findAllByEmailOrPhoneNumber(email, phoneNumber);
         if (!duplicates.isEmpty()) {
             pendingRegistrationRepository.deleteAll(duplicates);
+        }
+    }
+
+    private void clearExistingPendingLogins(Long userId) {
+        List<PendingLogin> duplicates = pendingLoginRepository.findAllByUserId(userId);
+        if (!duplicates.isEmpty()) {
+            pendingLoginRepository.deleteAll(duplicates);
+        }
+    }
+
+    private void clearExistingPendingPasswordResets(Long userId) {
+        List<PendingPasswordReset> duplicates = pendingPasswordResetRepository.findAllByUserId(userId);
+        if (!duplicates.isEmpty()) {
+            pendingPasswordResetRepository.deleteAll(duplicates);
         }
     }
 
@@ -424,6 +660,36 @@ public class AuthServiceImpl implements AuthService {
         );
     }
 
+    private User resolveUserForLogin(LoginRequestDto request) throws Exception {
+        if (request == null) {
+            throw new BadRequestException("Login request cannot be empty");
+        }
+
+        if (!StringUtils.hasText(request.getPassword())) {
+            throw new InvalidUserCredentialsException("Password is required");
+        }
+
+        return resolveUserForIdentifier(request.getIdentifier(), request.getLoginType());
+    }
+
+    private User resolveUserForIdentifier(String identifier, LoginType loginType) throws Exception {
+        if (loginType == LoginType.EMAIL) {
+            ValidatorUtility.validateEmail(identifier);
+
+            return userRepository.findByEmail(identifier)
+                    .orElseThrow(() -> new UserNotFoundException("User not found for " + identifier));
+        }
+
+        if (loginType == LoginType.PHONE) {
+            ValidatorUtility.validatePhoneNumber(identifier);
+
+            return userRepository.findByPhoneNumber(identifier)
+                    .orElseThrow(() -> new UserNotFoundException("User not found for " + identifier));
+        }
+
+        throw new IllegalArgumentException("Invalid login type");
+    }
+
     private String generateOtp() {
         return String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
     }
@@ -450,6 +716,14 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private void ensureUserCanLogin(User user, String rawPassword) throws InvalidUserCredentialsException {
+        ensureOtpLoginAllowed(user);
+
+        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+            throw new InvalidUserCredentialsException("Invalid password");
+        }
+    }
+
+    private void ensureOtpLoginAllowed(User user) {
         if (!user.isActive()) {
             throw new RuntimeException("Account is deactivated");
         }
@@ -457,10 +731,10 @@ public class AuthServiceImpl implements AuthService {
         if (user.getAuthProvider() != AuthProvider.LOCAL) {
             throw new RuntimeException("Use OAuth login for this account");
         }
+    }
 
-        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
-            throw new InvalidUserCredentialsException("Invalid password");
-        }
+    private void ensurePasswordResetAllowed(User user) {
+        ensureOtpLoginAllowed(user);
     }
 
     private String extractToken(HttpServletRequest request) {

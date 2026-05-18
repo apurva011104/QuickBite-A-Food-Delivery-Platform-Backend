@@ -1,6 +1,8 @@
 package com.quickbite.auth.authservice.service;
 
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ForgotPasswordRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ResetPasswordWithOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.ResendOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.VerifyOtpRequestDto;
@@ -22,7 +24,17 @@ public interface AuthService {
 
     OtpDispatchResponseDto resendRegistrationOtp(ResendOtpRequestDto request);
 
-    AuthResponseDto login(LoginRequestDto request) throws Exception;
+    OtpDispatchResponseDto requestLoginOtp(LoginRequestDto request) throws Exception;
+
+    AuthResponseDto verifyLoginOtp(VerifyOtpRequestDto request);
+
+    OtpDispatchResponseDto resendLoginOtp(ResendOtpRequestDto request);
+
+    OtpDispatchResponseDto requestPasswordResetOtp(ForgotPasswordRequestDto request) throws Exception;
+
+    String verifyPasswordResetOtp(ResetPasswordWithOtpRequestDto request) throws InvalidPasswordException;
+
+    OtpDispatchResponseDto resendPasswordResetOtp(ResendOtpRequestDto request);
 
     void logout(HttpServletRequest request);
 

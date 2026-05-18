@@ -16,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.quickbite.auth.authservice.dto.requestDto.ChangePasswordRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ForgotPasswordRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ResetPasswordWithOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.ResendOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.VerifyOtpRequestDto;
@@ -70,9 +72,47 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponseDto> login(@RequestBody LoginRequestDto request) throws Exception {
-        AuthResponseDto response = authService.login(request);
-        log.info("User logged in successfully. email={}", response.getEmail());
+    public ResponseEntity<OtpDispatchResponseDto> requestLoginOtp(@RequestBody LoginRequestDto request) throws Exception {
+        OtpDispatchResponseDto response = authService.requestLoginOtp(request);
+        log.info("Login OTP issued. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/login/verify")
+    public ResponseEntity<AuthResponseDto> verifyLoginOtp(@Valid @RequestBody VerifyOtpRequestDto request) {
+        AuthResponseDto response = authService.verifyLoginOtp(request);
+        log.info("User logged in after OTP verification. email={} role={}", response.getEmail(), response.getRole());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/login/resend")
+    public ResponseEntity<OtpDispatchResponseDto> resendLoginOtp(@Valid @RequestBody ResendOtpRequestDto request) {
+        OtpDispatchResponseDto response = authService.resendLoginOtp(request);
+        log.info("Login OTP resent. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/password/forgot")
+    public ResponseEntity<OtpDispatchResponseDto> requestPasswordResetOtp(
+            @Valid @RequestBody ForgotPasswordRequestDto request) throws Exception {
+        OtpDispatchResponseDto response = authService.requestPasswordResetOtp(request);
+        log.info("Password reset OTP issued. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/password/forgot/verify")
+    public ResponseEntity<String> verifyPasswordResetOtp(
+            @Valid @RequestBody ResetPasswordWithOtpRequestDto request) throws InvalidPasswordException {
+        String response = authService.verifyPasswordResetOtp(request);
+        log.info("Password reset completed for verificationId={}", request.getVerificationId());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/password/forgot/resend")
+    public ResponseEntity<OtpDispatchResponseDto> resendPasswordResetOtp(
+            @Valid @RequestBody ResendOtpRequestDto request) {
+        OtpDispatchResponseDto response = authService.resendPasswordResetOtp(request);
+        log.info("Password reset OTP resent. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
         return ResponseEntity.ok(response);
     }
 

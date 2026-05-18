@@ -28,13 +28,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ForgotPasswordRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.LoginType;
+import com.quickbite.auth.authservice.dto.requestDto.ResetPasswordWithOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.ResendOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.VerifyOtpRequestDto;
 import com.quickbite.auth.authservice.dto.responseDto.AuthResponseDto;
 import com.quickbite.auth.authservice.dto.responseDto.OtpDispatchResponseDto;
 import com.quickbite.auth.authservice.entity.AuthProvider;
+import com.quickbite.auth.authservice.entity.PendingLogin;
+import com.quickbite.auth.authservice.entity.PendingPasswordReset;
 import com.quickbite.auth.authservice.entity.PendingRegistration;
 import com.quickbite.auth.authservice.entity.Role;
 import com.quickbite.auth.authservice.entity.User;
@@ -44,6 +48,8 @@ import com.quickbite.auth.authservice.exception.InvalidPasswordException;
 import com.quickbite.auth.authservice.exception.InvalidPhoneNumberException;
 import com.quickbite.auth.authservice.exception.InvalidUserCredentialsException;
 import com.quickbite.auth.authservice.exception.UserNotFoundException;
+import com.quickbite.auth.authservice.repository.PendingLoginRepository;
+import com.quickbite.auth.authservice.repository.PendingPasswordResetRepository;
 import com.quickbite.auth.authservice.repository.PendingRegistrationRepository;
 import com.quickbite.auth.authservice.repository.UserRepository;
 import com.quickbite.auth.authservice.security.TokenBlacklist;
@@ -58,6 +64,12 @@ class AuthServiceImplTest {
 
     @Mock
     private PendingRegistrationRepository pendingRegistrationRepository;
+
+    @Mock
+    private PendingLoginRepository pendingLoginRepository;
+
+    @Mock
+    private PendingPasswordResetRepository pendingPasswordResetRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -122,7 +134,7 @@ class AuthServiceImplTest {
         assertEquals("encoded-otp", savedPending.getOtpHash());
         assertTrue(savedPending.getExpiresAt().isAfter(LocalDateTime.now()));
         assertEquals(savedPending.getVerificationId(), response.getVerificationId());
-        verify(otpNotificationService).sendSignupOtp(
+        verify(otpNotificationService).sendRegistrationOtp(
                 eq(registerRequest.getName()),
                 eq(registerRequest.getEmail()),
                 anyString()
@@ -191,7 +203,7 @@ class AuthServiceImplTest {
         assertEquals("verification-1", response.getVerificationId());
         assertEquals(0, pendingRegistration.getFailedAttempts());
         assertEquals("new-encoded-otp", pendingRegistration.getOtpHash());
-        verify(otpNotificationService).sendSignupOtp(
+        verify(otpNotificationService).sendRegistrationOtp(
                 eq(pendingRegistration.getName()),
                 eq(pendingRegistration.getEmail()),
                 anyString()
@@ -199,18 +211,132 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void loginWithEmailShouldReturnJwtWhenCredentialsAreValid() throws Exception {
+    void requestLoginOtpShouldPersistPendingLoginAndDispatchCode() throws Exception {
         LoginRequestDto loginRequest = new LoginRequestDto("alice@example.com", "Password1", LoginType.EMAIL);
 
         when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(localUser));
         when(passwordEncoder.matches("Password1", localUser.getPassword())).thenReturn(true);
+        when(pendingLoginRepository.findAllByUserId(localUser.getId())).thenReturn(List.of());
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded-login-otp");
+        when(pendingLoginRepository.save(any(PendingLogin.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpDispatchResponseDto response = authService.requestLoginOtp(loginRequest);
+
+        ArgumentCaptor<PendingLogin> captor = ArgumentCaptor.forClass(PendingLogin.class);
+        verify(pendingLoginRepository).save(captor.capture());
+        PendingLogin savedPending = captor.getValue();
+
+        assertEquals(localUser.getId(), savedPending.getUserId());
+        assertEquals("encoded-login-otp", savedPending.getOtpHash());
+        assertEquals(savedPending.getVerificationId(), response.getVerificationId());
+        verify(otpNotificationService).sendLoginOtp(
+                eq(localUser.getName()),
+                eq(localUser.getEmail()),
+                anyString()
+        );
+    }
+
+    @Test
+    void verifyLoginOtpShouldReturnJwtWhenCodeIsValid() {
+        PendingLogin pendingLogin = buildPendingLogin("login-verification-1", 0);
+
+        when(pendingLoginRepository.findById("login-verification-1")).thenReturn(Optional.of(pendingLogin));
+        when(passwordEncoder.matches("123456", "encoded-login-otp")).thenReturn(true);
+        when(userRepository.findById(localUser.getId())).thenReturn(Optional.of(localUser));
         when(jwtUtil.generateToken(localUser.getId(), localUser.getEmail(), localUser.getRole().toString()))
                 .thenReturn("jwt-token");
 
-        AuthResponseDto response = authService.login(loginRequest);
+        AuthResponseDto response = authService.verifyLoginOtp(new VerifyOtpRequestDto("login-verification-1", "123456"));
 
         assertEquals("jwt-token", response.getAccessToken());
         assertEquals(localUser.getEmail(), response.getEmail());
+        verify(pendingLoginRepository).delete(pendingLogin);
+    }
+
+    @Test
+    void resendLoginOtpShouldResetAttemptsAndDispatchNewCode() {
+        PendingLogin pendingLogin = buildPendingLogin("login-verification-1", 2);
+
+        when(pendingLoginRepository.findById("login-verification-1")).thenReturn(Optional.of(pendingLogin));
+        when(userRepository.findById(localUser.getId())).thenReturn(Optional.of(localUser));
+        when(passwordEncoder.encode(anyString())).thenReturn("refreshed-login-otp");
+        when(pendingLoginRepository.save(any(PendingLogin.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpDispatchResponseDto response = authService.resendLoginOtp(new ResendOtpRequestDto("login-verification-1"));
+
+        assertEquals("login-verification-1", response.getVerificationId());
+        assertEquals(0, pendingLogin.getFailedAttempts());
+        assertEquals("refreshed-login-otp", pendingLogin.getOtpHash());
+        verify(otpNotificationService).sendLoginOtp(
+                eq(localUser.getName()),
+                eq(localUser.getEmail()),
+                anyString()
+        );
+    }
+
+    @Test
+    void requestPasswordResetOtpShouldPersistPendingResetAndDispatchCode() throws Exception {
+        ForgotPasswordRequestDto request = new ForgotPasswordRequestDto("alice@example.com", LoginType.EMAIL);
+
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(localUser));
+        when(pendingPasswordResetRepository.findAllByUserId(localUser.getId())).thenReturn(List.of());
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded-reset-otp");
+        when(pendingPasswordResetRepository.save(any(PendingPasswordReset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpDispatchResponseDto response = authService.requestPasswordResetOtp(request);
+
+        ArgumentCaptor<PendingPasswordReset> captor = ArgumentCaptor.forClass(PendingPasswordReset.class);
+        verify(pendingPasswordResetRepository).save(captor.capture());
+        PendingPasswordReset savedPending = captor.getValue();
+
+        assertEquals(localUser.getId(), savedPending.getUserId());
+        assertEquals("encoded-reset-otp", savedPending.getOtpHash());
+        assertEquals(savedPending.getVerificationId(), response.getVerificationId());
+        verify(otpNotificationService).sendPasswordResetOtp(
+                eq(localUser.getName()),
+                eq(localUser.getEmail()),
+                anyString()
+        );
+    }
+
+    @Test
+    void verifyPasswordResetOtpShouldUpdatePasswordAndClearPendingReset() throws InvalidPasswordException {
+        PendingPasswordReset pendingPasswordReset = buildPendingPasswordReset("reset-verification-1", 0);
+
+        when(pendingPasswordResetRepository.findById("reset-verification-1")).thenReturn(Optional.of(pendingPasswordReset));
+        when(passwordEncoder.matches("123456", "encoded-reset-otp")).thenReturn(true);
+        when(userRepository.findById(localUser.getId())).thenReturn(Optional.of(localUser));
+        when(passwordEncoder.encode("NewPassword1")).thenReturn("new-encoded-password");
+
+        String response = authService.verifyPasswordResetOtp(
+                new ResetPasswordWithOtpRequestDto("reset-verification-1", "123456", "NewPassword1")
+        );
+
+        assertEquals("Password reset successfully", response);
+        assertEquals("new-encoded-password", localUser.getPassword());
+        verify(userRepository).save(localUser);
+        verify(pendingPasswordResetRepository).delete(pendingPasswordReset);
+    }
+
+    @Test
+    void resendPasswordResetOtpShouldResetAttemptsAndDispatchNewCode() {
+        PendingPasswordReset pendingPasswordReset = buildPendingPasswordReset("reset-verification-1", 2);
+
+        when(pendingPasswordResetRepository.findById("reset-verification-1")).thenReturn(Optional.of(pendingPasswordReset));
+        when(userRepository.findById(localUser.getId())).thenReturn(Optional.of(localUser));
+        when(passwordEncoder.encode(anyString())).thenReturn("refreshed-reset-otp");
+        when(pendingPasswordResetRepository.save(any(PendingPasswordReset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpDispatchResponseDto response = authService.resendPasswordResetOtp(new ResendOtpRequestDto("reset-verification-1"));
+
+        assertEquals("reset-verification-1", response.getVerificationId());
+        assertEquals(0, pendingPasswordReset.getFailedAttempts());
+        assertEquals("refreshed-reset-otp", pendingPasswordReset.getOtpHash());
+        verify(otpNotificationService).sendPasswordResetOtp(
+                eq(localUser.getName()),
+                eq(localUser.getEmail()),
+                anyString()
+        );
     }
 
     @Test
@@ -220,7 +346,7 @@ class AuthServiceImplTest {
         when(userRepository.findByPhoneNumber("9876543210")).thenReturn(Optional.of(localUser));
         when(passwordEncoder.matches("WrongPass1", localUser.getPassword())).thenReturn(false);
 
-        assertThrows(InvalidUserCredentialsException.class, () -> authService.login(loginRequest));
+        assertThrows(InvalidUserCredentialsException.class, () -> authService.requestLoginOtp(loginRequest));
     }
 
     @Test
@@ -285,11 +411,11 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void loginWithEmailShouldThrowWhenUserIsMissing() {
+    void requestLoginOtpShouldThrowWhenUserIsMissing() {
         LoginRequestDto loginRequest = new LoginRequestDto("missing@example.com", "Password1", LoginType.EMAIL);
         when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
 
-        assertThrows(UserNotFoundException.class, () -> authService.login(loginRequest));
+        assertThrows(UserNotFoundException.class, () -> authService.requestLoginOtp(loginRequest));
     }
 
     private PendingRegistration buildPendingRegistration(String verificationId, int failedAttempts) {
@@ -305,5 +431,29 @@ class AuthServiceImplTest {
         pendingRegistration.setExpiresAt(LocalDateTime.now().plusMinutes(10));
         pendingRegistration.setFailedAttempts(failedAttempts);
         return pendingRegistration;
+    }
+
+    private PendingLogin buildPendingLogin(String verificationId, int failedAttempts) {
+        PendingLogin pendingLogin = new PendingLogin();
+        pendingLogin.setVerificationId(verificationId);
+        pendingLogin.setUserId(localUser.getId());
+        pendingLogin.setEmail(localUser.getEmail());
+        pendingLogin.setOtpHash("encoded-login-otp");
+        pendingLogin.setCreatedAt(LocalDateTime.now());
+        pendingLogin.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        pendingLogin.setFailedAttempts(failedAttempts);
+        return pendingLogin;
+    }
+
+    private PendingPasswordReset buildPendingPasswordReset(String verificationId, int failedAttempts) {
+        PendingPasswordReset pendingPasswordReset = new PendingPasswordReset();
+        pendingPasswordReset.setVerificationId(verificationId);
+        pendingPasswordReset.setUserId(localUser.getId());
+        pendingPasswordReset.setEmail(localUser.getEmail());
+        pendingPasswordReset.setOtpHash("encoded-reset-otp");
+        pendingPasswordReset.setCreatedAt(LocalDateTime.now());
+        pendingPasswordReset.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        pendingPasswordReset.setFailedAttempts(failedAttempts);
+        return pendingPasswordReset;
     }
 }
