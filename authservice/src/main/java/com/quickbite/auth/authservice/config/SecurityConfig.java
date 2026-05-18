@@ -31,7 +31,7 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/register", "/auth/login", "/auth/oauth-success", "/h2-console/**").permitAll()
+                        .requestMatchers("/auth/register", "/auth/register/**", "/auth/login", "/auth/oauth-success", "/h2-console/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()
                         .anyRequest().authenticated()
                 )

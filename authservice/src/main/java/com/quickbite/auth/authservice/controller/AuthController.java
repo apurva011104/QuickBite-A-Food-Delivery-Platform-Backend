@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,8 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.quickbite.auth.authservice.dto.requestDto.ChangePasswordRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.LoginRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.ResendOtpRequestDto;
 import com.quickbite.auth.authservice.dto.requestDto.RegisterRequestDto;
+import com.quickbite.auth.authservice.dto.requestDto.VerifyOtpRequestDto;
 import com.quickbite.auth.authservice.dto.responseDto.AuthResponseDto;
+import com.quickbite.auth.authservice.dto.responseDto.OtpDispatchResponseDto;
 import com.quickbite.auth.authservice.dto.responseDto.UserProfileResponseDto;
 import com.quickbite.auth.authservice.entity.User;
 import com.quickbite.auth.authservice.exception.InvalidPasswordException;
@@ -25,10 +29,12 @@ import com.quickbite.auth.authservice.exception.InvalidPhoneNumberException;
 import com.quickbite.auth.authservice.mapper.AuthMapper;
 import com.quickbite.auth.authservice.service.AuthService;
 
+import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/auth")
+@Validated
 public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
@@ -40,9 +46,26 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponseDto> register(@RequestBody RegisterRequestDto request) throws Exception {
-        AuthResponseDto response = authService.register(request);
-        log.info("User registered successfully. email={} role={}", response.getEmail(), response.getRole());
+    public ResponseEntity<OtpDispatchResponseDto> requestRegistrationOtp(
+            @Valid @RequestBody RegisterRequestDto request) throws Exception {
+        OtpDispatchResponseDto response = authService.requestRegistrationOtp(request);
+        log.info("Registration OTP issued. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/register/verify")
+    public ResponseEntity<AuthResponseDto> verifyRegistrationOtp(
+            @Valid @RequestBody VerifyOtpRequestDto request) {
+        AuthResponseDto response = authService.verifyRegistrationOtp(request);
+        log.info("User registered after OTP verification. email={} role={}", response.getEmail(), response.getRole());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/register/resend")
+    public ResponseEntity<OtpDispatchResponseDto> resendRegistrationOtp(
+            @Valid @RequestBody ResendOtpRequestDto request) {
+        OtpDispatchResponseDto response = authService.resendRegistrationOtp(request);
+        log.info("Registration OTP resent. verificationId={} email={}", response.getVerificationId(), response.getMaskedEmail());
         return ResponseEntity.ok(response);
     }
 
