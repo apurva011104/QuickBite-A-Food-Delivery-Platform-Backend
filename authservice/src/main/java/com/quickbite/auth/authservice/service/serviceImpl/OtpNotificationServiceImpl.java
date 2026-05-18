@@ -6,6 +6,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -29,13 +30,26 @@ public class OtpNotificationServiceImpl implements OtpNotificationService {
     }
 
     @Override
-    public void sendSignupOtp(String name, String email, String otp) {
-        sendEmailOtp(name, email, otp);
+    @Async("otpTaskExecutor")
+    public void sendRegistrationOtp(String name, String email, String otp) {
+        sendEmailOtp(name, email, otp, "Verify your QuickBite account", "verify your QuickBite account");
     }
 
-    private void sendEmailOtp(String name, String email, String otp) {
+    @Override
+    @Async("otpTaskExecutor")
+    public void sendLoginOtp(String name, String email, String otp) {
+        sendEmailOtp(name, email, otp, "QuickBite login verification", "complete your QuickBite login");
+    }
+
+    @Override
+    @Async("otpTaskExecutor")
+    public void sendPasswordResetOtp(String name, String email, String otp) {
+        sendEmailOtp(name, email, otp, "QuickBite password reset", "reset your QuickBite password");
+    }
+
+    private void sendEmailOtp(String name, String email, String otp, String subject, String actionLabel) {
         if (javaMailSender == null || !StringUtils.hasText(mailHost)) {
-            log.info("MAIL_HOST not configured. Signup OTP for email={} is {}", email, otp);
+            log.info("MAIL_HOST not configured. OTP for email={} is {}", email, otp);
             return;
         }
 
@@ -43,20 +57,19 @@ public class OtpNotificationServiceImpl implements OtpNotificationService {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(otpMailFrom);
             message.setTo(email);
-            message.setSubject("Verify your QuickBite account");
-            message.setText(buildEmailMessage(name, otp));
+            message.setSubject(subject);
+            message.setText(buildEmailMessage(name, otp, actionLabel));
             javaMailSender.send(message);
         } catch (Exception ex) {
             log.error("Failed to send OTP email to {}", email, ex);
-            throw new RuntimeException("Unable to send verification email right now");
         }
     }
 
-    private String buildEmailMessage(String name, String otp) {
+    private String buildEmailMessage(String name, String otp, String actionLabel) {
         String safeName = StringUtils.hasText(name) ? name : "there";
         return "Hi " + safeName + ",\n\n"
-                + "Use this OTP to verify your QuickBite account: " + otp + "\n\n"
-                + "This code will expire soon. If you did not try to sign up, please ignore this email.\n\n"
+                + "Use this OTP to " + actionLabel + ": " + otp + "\n\n"
+                + "This code will expire soon. If you did not request this code, please ignore this email.\n\n"
                 + "QuickBite";
     }
 }
