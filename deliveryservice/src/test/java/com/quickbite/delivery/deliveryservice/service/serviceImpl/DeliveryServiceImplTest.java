@@ -85,7 +85,7 @@ class DeliveryServiceImplTest {
         requestDto.setOrderId(101L);
 
         when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
-        when(activeDeliveryRepository.existsByOrderId(101L)).thenReturn(false);
+        when(activeDeliveryRepository.existsByOrderIdAndStatusIn(any(Long.class), any(List.class))).thenReturn(false);
         when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(deliveryRepository.save(any(DeliveryAgent.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -101,7 +101,7 @@ class DeliveryServiceImplTest {
     }
 
     @Test
-    void pickupDeliveryShouldMoveAssignedDeliveryToPickedUp() {
+    void acceptDeliveryShouldMoveAssignedDeliveryToAccepted() {
         PickupDeliveryRequestDto requestDto = new PickupDeliveryRequestDto();
         requestDto.setAgentId(7L);
         requestDto.setOrderId(101L);
@@ -109,13 +109,68 @@ class DeliveryServiceImplTest {
         ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ASSIGNED);
 
         when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
-        when(activeDeliveryRepository.findByOrderId(101L)).thenReturn(Optional.of(activeDelivery));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
+        when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = deliveryService.acceptDelivery(currentUser, requestDto);
+
+        assertThat(response.getMessage()).contains("accepted");
+        assertThat(activeDelivery.getStatus()).isEqualTo(DeliveryStatus.ACCEPTED);
+    }
+
+    @Test
+    void rejectDeliveryShouldMarkAssignmentRejectedAndSetAgentOnline() {
+        PickupDeliveryRequestDto requestDto = new PickupDeliveryRequestDto();
+        requestDto.setAgentId(7L);
+        requestDto.setOrderId(101L);
+
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ASSIGNED);
+        agent.setAvailable(false);
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
+        when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(deliveryRepository.save(any(DeliveryAgent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = deliveryService.rejectDelivery(currentUser, requestDto);
+
+        assertThat(response.getMessage()).contains("rejected");
+        assertThat(activeDelivery.getStatus()).isEqualTo(DeliveryStatus.REJECTED);
+        assertThat(agent.isAvailable()).isTrue();
+    }
+
+    @Test
+    void pickupDeliveryShouldMoveAcceptedDeliveryToPickedUp() {
+        PickupDeliveryRequestDto requestDto = new PickupDeliveryRequestDto();
+        requestDto.setAgentId(7L);
+        requestDto.setOrderId(101L);
+
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ACCEPTED);
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
         when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         var response = deliveryService.pickupDelivery(currentUser, requestDto);
 
         assertThat(response.getMessage()).contains("picked up");
         assertThat(activeDelivery.getStatus()).isEqualTo(DeliveryStatus.PICKED_UP);
+    }
+
+    @Test
+    void pickupDeliveryShouldRejectWhenAssignmentIsNotAcceptedYet() {
+        PickupDeliveryRequestDto requestDto = new PickupDeliveryRequestDto();
+        requestDto.setAgentId(7L);
+        requestDto.setOrderId(101L);
+
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ASSIGNED);
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
+
+        assertThatThrownBy(() -> deliveryService.pickupDelivery(currentUser, requestDto))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Delivery can only be picked up after the agent accepts it");
     }
 
     @Test
@@ -141,10 +196,10 @@ class DeliveryServiceImplTest {
         requestDto.setAgentId(7L);
         requestDto.setOrderId(101L);
 
-        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ASSIGNED);
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ACCEPTED);
 
         when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
-        when(activeDeliveryRepository.findByOrderId(101L)).thenReturn(Optional.of(activeDelivery));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
 
         assertThatThrownBy(() -> deliveryService.completeDelivery(currentUser, requestDto))
                 .isInstanceOf(BadRequestException.class)

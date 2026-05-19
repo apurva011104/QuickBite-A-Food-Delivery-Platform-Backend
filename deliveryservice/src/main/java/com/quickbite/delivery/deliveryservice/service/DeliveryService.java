@@ -40,6 +40,10 @@ public interface DeliveryService {
 
     MessageResponseDto assignOrder(AssignOrderRequestDto requestDto);
 
+    MessageResponseDto acceptDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
+
+    MessageResponseDto rejectDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
+
     MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
     MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto);

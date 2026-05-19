@@ -121,6 +121,24 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.pickupDelivery(currentUser, requestDto));
     }
 
+    @PostMapping("/accept-delivery")
+    public ResponseEntity<MessageResponseDto> acceptDelivery(
+            @Valid @RequestBody PickupDeliveryRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Accept delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
+        return ResponseEntity.ok(deliveryService.acceptDelivery(currentUser, requestDto));
+    }
+
+    @PostMapping("/reject-delivery")
+    public ResponseEntity<MessageResponseDto> rejectDelivery(
+            @Valid @RequestBody PickupDeliveryRequestDto requestDto,
+            Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Reject delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
+        return ResponseEntity.ok(deliveryService.rejectDelivery(currentUser, requestDto));
+    }
+
     @PostMapping("/complete-delivery")
     public ResponseEntity<MessageResponseDto> completeDelivery(
             @Valid @RequestBody CompleteDeliveryRequestDto requestDto,

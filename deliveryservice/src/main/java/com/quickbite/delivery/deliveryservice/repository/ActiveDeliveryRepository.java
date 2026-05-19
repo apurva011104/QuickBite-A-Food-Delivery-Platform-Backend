@@ -12,9 +12,9 @@ import com.quickbite.delivery.deliveryservice.entity.DeliveryStatus;
 @Repository
 public interface ActiveDeliveryRepository extends JpaRepository<ActiveDelivery, Long> {
 
-    Optional<ActiveDelivery> findByOrderId(Long orderId);
+    Optional<ActiveDelivery> findTopByOrderIdOrderByCreatedAtDesc(Long orderId);
 
-    List<ActiveDelivery> findByAgentIdAndStatusNot(Long agentId, DeliveryStatus status);
+    List<ActiveDelivery> findByAgentIdAndStatusIn(Long agentId, List<DeliveryStatus> statuses);
 
-    boolean existsByOrderId(Long orderId);
+    boolean existsByOrderIdAndStatusIn(Long orderId, List<DeliveryStatus> statuses);
 }
