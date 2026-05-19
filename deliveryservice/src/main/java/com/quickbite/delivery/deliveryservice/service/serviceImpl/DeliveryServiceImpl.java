@@ -3,6 +3,7 @@ package com.quickbite.delivery.deliveryservice.service.serviceImpl;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,12 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional
 @Slf4j
 public class DeliveryServiceImpl implements DeliveryService {
+
+    private static final List<DeliveryStatus> ACTIVE_STATUSES = Arrays.asList(
+            DeliveryStatus.ASSIGNED,
+            DeliveryStatus.ACCEPTED,
+            DeliveryStatus.PICKED_UP
+    );
 
     @Autowired
     private DeliveryRepository deliveryRepository;
@@ -178,7 +185,7 @@ public class DeliveryServiceImpl implements DeliveryService {
         }
 
         boolean hasActiveAssignments = !activeDeliveryRepository
-                .findByAgentIdAndStatusNot(agentId, DeliveryStatus.DELIVERED)
+                .findByAgentIdAndStatusIn(agentId, ACTIVE_STATUSES)
                 .isEmpty();
 
         if (hasActiveAssignments && Boolean.FALSE.equals(requestDto.getAvailable())) {
@@ -246,7 +253,7 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new AgentNotAvailableException("Agent is not available");
         }
 
-        if (activeDeliveryRepository.existsByOrderId(requestDto.getOrderId())) {
+        if (activeDeliveryRepository.existsByOrderIdAndStatusIn(requestDto.getOrderId(), ACTIVE_STATUSES)) {
             throw new BadRequestException("Order is already assigned");
         }
 
@@ -279,21 +286,60 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
+    public MessageResponseDto acceptDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        validateAgentOwnership(agent, currentUser);
+
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
+        validateAssignedAgent(activeDelivery, requestDto.getAgentId());
+
+        if (activeDelivery.getStatus() != DeliveryStatus.ASSIGNED) {
+            throw new BadRequestException("Only ASSIGNED deliveries can be accepted");
+        }
+
+        activeDelivery.setStatus(DeliveryStatus.ACCEPTED);
+        activeDeliveryRepository.save(activeDelivery);
+
+        log.info("Delivery accepted for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
+        return new MessageResponseDto(
+                "Order " + requestDto.getOrderId() + " accepted by agent " + requestDto.getAgentId()
+        );
+    }
+
+    @Override
+    public MessageResponseDto rejectDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
+        DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        validateAgentOwnership(agent, currentUser);
+
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
+        validateAssignedAgent(activeDelivery, requestDto.getAgentId());
+
+        if (activeDelivery.getStatus() != DeliveryStatus.ASSIGNED) {
+            throw new BadRequestException("Only ASSIGNED deliveries can be rejected");
+        }
+
+        activeDelivery.setStatus(DeliveryStatus.REJECTED);
+        activeDeliveryRepository.save(activeDelivery);
+
+        agent.setAvailable(true);
+        deliveryRepository.save(agent);
+
+        log.info("Delivery rejected for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
+        return new MessageResponseDto(
+                "Order " + requestDto.getOrderId() + " rejected by agent " + requestDto.getAgentId()
+        );
+    }
+
+    @Override
     public MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
 
-        ActiveDelivery activeDelivery = activeDeliveryRepository.findByOrderId(requestDto.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Active delivery not found for order ID: " + requestDto.getOrderId()
-                ));
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
+        validateAssignedAgent(activeDelivery, requestDto.getAgentId());
 
-        if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
-            throw new UnauthorizedActionException("This order is not assigned to the given agent");
-        }
-
-        if (activeDelivery.getStatus() != DeliveryStatus.ASSIGNED) {
-            throw new BadRequestException("Delivery can only be picked up from ASSIGNED status");
+        if (activeDelivery.getStatus() != DeliveryStatus.ACCEPTED) {
+            throw new BadRequestException("Delivery can only be picked up after the agent accepts it");
         }
 
         activeDelivery.setStatus(DeliveryStatus.PICKED_UP);
@@ -310,14 +356,8 @@ public class DeliveryServiceImpl implements DeliveryService {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
 
-        ActiveDelivery activeDelivery = activeDeliveryRepository.findByOrderId(requestDto.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Active delivery not found for order ID: " + requestDto.getOrderId()
-                ));
-
-        if (!activeDelivery.getAgentId().equals(requestDto.getAgentId())) {
-            throw new UnauthorizedActionException("This order is not assigned to the given agent");
-        }
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
+        validateAssignedAgent(activeDelivery, requestDto.getAgentId());
 
         if (activeDelivery.getStatus() != DeliveryStatus.PICKED_UP) {
             throw new BadRequestException("Delivery must be picked up before it can be completed");
@@ -356,7 +396,7 @@ public class DeliveryServiceImpl implements DeliveryService {
             validateAgentOwnership(agent, currentUser);
         }
 
-        return activeDeliveryRepository.findByAgentIdAndStatusNot(agentId, DeliveryStatus.DELIVERED)
+        return activeDeliveryRepository.findByAgentIdAndStatusIn(agentId, ACTIVE_STATUSES)
                 .stream()
                 .map(delivery -> new ActiveDeliveryResponseDto(
                         delivery.getOrderId(),
@@ -369,6 +409,19 @@ public class DeliveryServiceImpl implements DeliveryService {
     private DeliveryAgent getAgentOrThrow(Long agentId) {
         return deliveryRepository.findByAgentId(agentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
+    }
+
+    private ActiveDelivery getAssignedDeliveryOrThrow(Long orderId) {
+        return activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Active delivery not found for order ID: " + orderId
+                ));
+    }
+
+    private void validateAssignedAgent(ActiveDelivery activeDelivery, Long agentId) {
+        if (!activeDelivery.getAgentId().equals(agentId)) {
+            throw new UnauthorizedActionException("This order is not assigned to the given agent");
+        }
     }
 
     private void validateAgentOwnership(DeliveryAgent agent, UserPrincipal currentUser) {
