@@ -453,13 +453,35 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void updateOrderStatusShouldRejectOwnerForPickedUpTransition() {
+    void updateOrderStatusShouldRejectOwnerForOutForDeliveryTransition() {
         order.setOrderStatus(OrderStatus.READY_FOR_PICKUP);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PICKED_UP, owner, "token"))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.OUT_FOR_DELIVERY, owner, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("Owners can only move orders to CONFIRMED, PREPARING, READY_FOR_PICKUP, or REJECTED");
+    }
+
+    @Test
+    void updateOrderStatusShouldAllowReadyForPickupToOutForDelivery() {
+        order.setOrderStatus(OrderStatus.READY_FOR_PICKUP);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.OUT_FOR_DELIVERY, agent, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+    }
+
+    @Test
+    void updateOrderStatusShouldAllowOutForDeliveryToDelivered() {
+        order.setOrderStatus(OrderStatus.OUT_FOR_DELIVERY);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.DELIVERED, agent, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.DELIVERED);
     }
 
     @Test

@@ -211,6 +211,7 @@ public class OrderServiceImpl implements OrderService {
                 OrderStatus.CONFIRMED,
                 OrderStatus.PREPARING,
                 OrderStatus.READY_FOR_PICKUP,
+                OrderStatus.OUT_FOR_DELIVERY,
                 OrderStatus.PICKED_UP
         );
 
@@ -339,7 +340,8 @@ public class OrderServiceImpl implements OrderService {
             case PAYMENT_PENDING -> newStatus == OrderStatus.PLACED || newStatus == OrderStatus.CANCELLED;
             case CONFIRMED -> newStatus == OrderStatus.PREPARING;
             case PREPARING -> newStatus == OrderStatus.READY_FOR_PICKUP;
-            case READY_FOR_PICKUP -> newStatus == OrderStatus.PICKED_UP;
+            case READY_FOR_PICKUP -> newStatus == OrderStatus.OUT_FOR_DELIVERY;
+            case OUT_FOR_DELIVERY -> newStatus == OrderStatus.DELIVERED;
             case PICKED_UP -> newStatus == OrderStatus.DELIVERED;
             default -> false;
         };
