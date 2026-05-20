@@ -139,7 +139,7 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void placeOrderShouldConfirmForPaidOnlinePayment() {
+    void placeOrderShouldCreatePlacedOrderForPaidOnlinePayment() {
         PaymentResponseDto paymentResponse = new PaymentResponseDto();
         paymentResponse.setStatus(PaymentStatus.PAID);
 
@@ -154,16 +154,16 @@ class OrderServiceImplTest {
 
         OrderResponseDto result = orderService.placeOrder(orderRequest, customer, "token");
 
-        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PLACED);
         assertThat(result.getTotalAmount()).isEqualByComparingTo("350");
         assertThat(result.getFinalAmount()).isEqualByComparingTo("330");
         assertThat(result.getDeliveryLatitude()).isEqualByComparingTo("28.6139");
         assertThat(result.getDeliveryLongitude()).isEqualByComparingTo("77.2090");
-        verify(notificationEventPublisher, times(3)).publishOrderNotification(any(NotificationEvent.class));
+        verify(notificationEventPublisher, times(2)).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
-    void placeOrderShouldConfirmForCodPendingPayment() {
+    void placeOrderShouldCreatePlacedOrderForCodPendingPayment() {
         orderRequest.setPaymentMode(PaymentMode.COD);
         PaymentResponseDto paymentResponse = new PaymentResponseDto();
         paymentResponse.setStatus(PaymentStatus.PENDING);
@@ -179,7 +179,7 @@ class OrderServiceImplTest {
 
         OrderResponseDto result = orderService.placeOrder(orderRequest, customer, "cod-token");
 
-        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PLACED);
         verify(notificationEventPublisher, times(2)).publishOrderNotification(any(NotificationEvent.class));
     }
 
@@ -284,7 +284,7 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void getOrderByIdShouldConfirmPendingOnlineOrderAfterPaymentVerification() {
+    void getOrderByIdShouldMovePendingOnlineOrderToPlacedAfterPaymentVerification() {
         order.setOrderStatus(OrderStatus.PAYMENT_PENDING);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -295,9 +295,8 @@ class OrderServiceImplTest {
 
         OrderResponseDto result = orderService.getOrderById(100L, customer, "token");
 
-        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PLACED);
         verify(paymentClient).getPaymentByOrder(100L, "Bearer token");
-        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -335,20 +334,24 @@ class OrderServiceImplTest {
         when(orderRepository.countByRestaurantId(10L)).thenReturn(6L);
 
         assertThat(orderService.getOrdersByCustomer(1L, "token")).hasSize(1);
-        assertThat(orderService.getOrdersByRestaurant(10L, new UserPrincipal(2L, "owner@quickbite.com", "OWNER"))).hasSize(1);
+        assertThat(orderService.getOrdersByRestaurant(
+                10L,
+                new UserPrincipal(2L, "owner@quickbite.com", "OWNER"),
+                "token"
+        )).hasSize(1);
         assertThat(orderService.getActiveOrders()).hasSize(1);
         assertThat(orderService.getOrderCountByRestaurant(10L)).isEqualTo(6L);
     }
 
     @Test
     void getOrdersByRestaurantShouldRejectWrongOwner() {
-        assertThatThrownBy(() -> orderService.getOrdersByRestaurant(10L, wrongOwner))
+        assertThatThrownBy(() -> orderService.getOrdersByRestaurant(10L, wrongOwner, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("You are not allowed to view orders for this restaurant");
     }
 
     @Test
-    void getOrdersByCustomerShouldConfirmPendingOnlineOrdersAfterPaymentVerification() {
+    void getOrdersByCustomerShouldMovePendingOnlineOrdersToPlacedAfterPaymentVerification() {
         order.setOrderStatus(OrderStatus.PAYMENT_PENDING);
         when(orderRepository.findByCustomerIdOrderByOrderDateDesc(1L)).thenReturn(List.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -360,16 +363,28 @@ class OrderServiceImplTest {
         List<OrderResponseDto> result = orderService.getOrdersByCustomer(1L, "token");
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.get(0).getOrderStatus()).isEqualTo(OrderStatus.PLACED);
     }
 
     @Test
-    void updateOrderStatusShouldAllowValidTransition() {
+    void updateOrderStatusShouldAllowOwnerToConfirmPlacedOrder() {
+        order.setOrderStatus(OrderStatus.PLACED);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, owner, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
+    }
+
+    @Test
+    void updateOrderStatusShouldAllowPreparingAfterConfirmation() {
         order.setOrderStatus(OrderStatus.CONFIRMED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner);
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PREPARING);
     }
@@ -380,9 +395,22 @@ class OrderServiceImplTest {
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.READY_FOR_PICKUP, owner);
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.READY_FOR_PICKUP, owner, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.READY_FOR_PICKUP);
+    }
+
+    @Test
+    void updateOrderStatusShouldAllowOwnerToRejectPlacedOrder() {
+        order.setOrderStatus(OrderStatus.PLACED);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.REJECTED, owner, "token");
+
+        assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.REJECTED);
+        verify(paymentClient).refundPayment(100L, "Bearer token");
+        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -390,7 +418,7 @@ class OrderServiceImplTest {
         order.setOrderStatus(OrderStatus.PLACED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.DELIVERED, agent))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.DELIVERED, agent, "token"))
                 .isInstanceOf(InvalidOrderStateException.class)
                 .hasMessage("Invalid status transition from PLACED to DELIVERED");
     }
@@ -400,16 +428,26 @@ class OrderServiceImplTest {
         order.setOrderStatus(OrderStatus.CANCELLED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, agent))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, agent, "token"))
                 .isInstanceOf(InvalidOrderStateException.class)
                 .hasMessage("No further status change allowed from CANCELLED");
+    }
+
+    @Test
+    void updateOrderStatusShouldRejectFromRejected() {
+        order.setOrderStatus(OrderStatus.REJECTED);
+        when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, owner, "token"))
+                .isInstanceOf(InvalidOrderStateException.class)
+                .hasMessage("No further status change allowed from REJECTED");
     }
 
     @Test
     void updateOrderStatusShouldRejectOwnerForDifferentRestaurant() {
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PREPARING, wrongOwner))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PREPARING, wrongOwner, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
                 .hasMessage("You are not allowed to view orders for this restaurant");
     }
@@ -419,9 +457,9 @@ class OrderServiceImplTest {
         order.setOrderStatus(OrderStatus.READY_FOR_PICKUP);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PICKED_UP, owner))
+        assertThatThrownBy(() -> orderService.updateOrderStatus(100L, OrderStatus.PICKED_UP, owner, "token"))
                 .isInstanceOf(UnauthorizedActionException.class)
-                .hasMessage("Owners can only move orders to PREPARING or READY_FOR_PICKUP");
+                .hasMessage("Owners can only move orders to CONFIRMED, PREPARING, READY_FOR_PICKUP, or REJECTED");
     }
 
     @Test
@@ -444,13 +482,13 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void cancelOrderShouldRejectWhenPreparationStarted() {
-        order.setOrderStatus(OrderStatus.PREPARING);
+    void cancelOrderShouldRejectWhenOrderAlreadyConfirmedByRestaurant() {
+        order.setOrderStatus(OrderStatus.CONFIRMED);
         when(orderRepository.findById(100L)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> orderService.cancelOrder(100L, customer, "token"))
                 .isInstanceOf(InvalidOrderStateException.class)
-                .hasMessage("Order cannot be cancelled after preparation begins");
+                .hasMessage("Order cannot be cancelled after the restaurant confirms it");
     }
 
     @Test

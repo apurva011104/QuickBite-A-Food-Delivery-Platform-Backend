@@ -119,8 +119,9 @@ public class OrderServiceImpl implements OrderService {
             if (paymentResponse != null) {
                 if (savedOrder.getPaymentMode() == PaymentMode.COD
                         && paymentResponse.getStatus() == PaymentStatus.PENDING) {
-                    savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
-                    log.info("COD order confirmed orderId={}", savedOrder.getOrderId());
+                    savedOrder.setOrderStatus(OrderStatus.PLACED);
+                    log.info("COD order placed and awaiting restaurant confirmation orderId={}",
+                            savedOrder.getOrderId());
                 } else if ((savedOrder.getPaymentMode() == PaymentMode.CARD
                         || savedOrder.getPaymentMode() == PaymentMode.UPI)
                         && paymentResponse.getStatus() == PaymentStatus.PENDING) {
@@ -128,18 +129,9 @@ public class OrderServiceImpl implements OrderService {
                     log.info("Online payment initialized orderId={}, awaiting Razorpay verification",
                             savedOrder.getOrderId());
                 } else if (paymentResponse.getStatus() == PaymentStatus.PAID) {
-                    savedOrder.setOrderStatus(OrderStatus.CONFIRMED);
-                    log.info("Online payment successful orderId={}", savedOrder.getOrderId());
-                    notificationEventPublisher.publishOrderNotification(
-                            new NotificationEvent(
-                                    "ORDER_CONFIRMED",
-                                    savedOrder.getCustomerId(),
-                                    "Order Confirmed",
-                                    "Your order #" + savedOrder.getOrderId() + " has been confirmed.",
-                                    savedOrder.getOrderId(),
-                                    "ORDER"
-                            )
-                    );
+                    savedOrder.setOrderStatus(OrderStatus.PLACED);
+                    log.info("Online payment successful and order is awaiting restaurant confirmation orderId={}",
+                            savedOrder.getOrderId());
 
                 } else {
                     savedOrder.setOrderStatus(OrderStatus.CANCELLED);
@@ -201,11 +193,12 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser) {
+    public List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser, String token) {
         validateRestaurantOwnerAccess(restaurantId, currentUser);
 
         return orderRepository.findByRestaurantIdOrderByOrderDateDesc(restaurantId)
                 .stream()
+                .map(order -> synchronizeOnlinePaymentStatus(order, token))
                 .map(OrderMapper::entityToDto)
                 .toList();
     }
@@ -229,7 +222,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus newStatus, UserPrincipal currentUser) {
+    public OrderResponseDto updateOrderStatus(Long orderId, OrderStatus newStatus, UserPrincipal currentUser, String token) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + orderId));
 
@@ -242,6 +235,8 @@ public class OrderServiceImpl implements OrderService {
 
         log.info("Order status updated orderId={} from={} to={}",
                 orderId, previousStatus, newStatus);
+
+        handleOrderStatusSideEffects(updated, previousStatus, currentUser, token);
 
         return OrderMapper.entityToDto(updated);
     }
@@ -270,9 +265,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if (!(order.getOrderStatus() == OrderStatus.PLACED
-                || order.getOrderStatus() == OrderStatus.PAYMENT_PENDING
-                || order.getOrderStatus() == OrderStatus.CONFIRMED)) {
-            throw new InvalidOrderStateException("Order cannot be cancelled after preparation begins");
+                || order.getOrderStatus() == OrderStatus.PAYMENT_PENDING)) {
+            throw new InvalidOrderStateException("Order cannot be cancelled after the restaurant confirms it");
         }
 
         order.setOrderStatus(OrderStatus.CANCELLED);
@@ -289,14 +283,7 @@ public class OrderServiceImpl implements OrderService {
                         "ORDER"
                 )
         );
-        if (order.getPaymentMode() != PaymentMode.COD) {
-            try {
-                paymentClient.refundPayment(orderId, "Bearer " + token);
-                log.info("Refund requested for orderId={}", orderId);
-            } catch (Exception ex) {
-                log.error("Refund call failed for orderId={}", orderId, ex);
-            }
-        }
+        requestRefundIfRequired(order, token);
 
         return OrderMapper.entityToDto(updated);
     }
@@ -341,16 +328,16 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {
-        if (currentStatus == OrderStatus.CANCELLED || currentStatus == OrderStatus.DELIVERED) {
+        if (currentStatus == OrderStatus.CANCELLED
+                || currentStatus == OrderStatus.REJECTED
+                || currentStatus == OrderStatus.DELIVERED) {
             throw new InvalidOrderStateException("No further status change allowed from " + currentStatus);
         }
 
         boolean valid = switch (currentStatus) {
-            case PLACED -> newStatus == OrderStatus.CONFIRMED
-                    || newStatus == OrderStatus.PAYMENT_PENDING
-                    || newStatus == OrderStatus.CANCELLED;
-            case PAYMENT_PENDING -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.CANCELLED;
-            case CONFIRMED -> newStatus == OrderStatus.PREPARING || newStatus == OrderStatus.CANCELLED;
+            case PLACED -> newStatus == OrderStatus.CONFIRMED || newStatus == OrderStatus.REJECTED;
+            case PAYMENT_PENDING -> newStatus == OrderStatus.PLACED || newStatus == OrderStatus.CANCELLED;
+            case CONFIRMED -> newStatus == OrderStatus.PREPARING;
             case PREPARING -> newStatus == OrderStatus.READY_FOR_PICKUP;
             case READY_FOR_PICKUP -> newStatus == OrderStatus.PICKED_UP;
             case PICKED_UP -> newStatus == OrderStatus.DELIVERED;
@@ -376,19 +363,10 @@ public class OrderServiceImpl implements OrderService {
         try {
             PaymentResponseDto payment = paymentClient.getPaymentByOrder(order.getOrderId(), "Bearer " + token);
             if (payment != null && payment.getStatus() == PaymentStatus.PAID) {
-                order.setOrderStatus(OrderStatus.CONFIRMED);
+                order.setOrderStatus(OrderStatus.PLACED);
                 Order updated = orderRepository.save(order);
-                log.info("Order confirmed after verified online payment orderId={}", updated.getOrderId());
-                notificationEventPublisher.publishOrderNotification(
-                        new NotificationEvent(
-                                "ORDER_CONFIRMED",
-                                updated.getCustomerId(),
-                                "Order Confirmed",
-                                "Your order #" + updated.getOrderId() + " has been confirmed.",
-                                updated.getOrderId(),
-                                "ORDER"
-                        )
-                );
+                log.info("Online payment verified and order is awaiting restaurant confirmation orderId={}",
+                        updated.getOrderId());
                 return updated;
             }
         } catch (Exception ex) {
@@ -420,8 +398,69 @@ public class OrderServiceImpl implements OrderService {
 
         validateRestaurantOwnerAccess(order.getRestaurantId(), currentUser);
 
-        if (newStatus != OrderStatus.PREPARING && newStatus != OrderStatus.READY_FOR_PICKUP) {
-            throw new UnauthorizedActionException("Owners can only move orders to PREPARING or READY_FOR_PICKUP");
+        if (newStatus != OrderStatus.CONFIRMED
+                && newStatus != OrderStatus.PREPARING
+                && newStatus != OrderStatus.READY_FOR_PICKUP
+                && newStatus != OrderStatus.REJECTED) {
+            throw new UnauthorizedActionException(
+                    "Owners can only move orders to CONFIRMED, PREPARING, READY_FOR_PICKUP, or REJECTED"
+            );
+        }
+    }
+
+    private void handleOrderStatusSideEffects(Order updated,
+                                              OrderStatus previousStatus,
+                                              UserPrincipal currentUser,
+                                              String token) {
+        if (!"OWNER".equals(currentUser.getRole()) && !"ADMIN".equals(currentUser.getRole())) {
+            return;
+        }
+
+        if (updated.getOrderStatus() == OrderStatus.CONFIRMED) {
+            notificationEventPublisher.publishOrderNotification(
+                    new NotificationEvent(
+                            "ORDER_CONFIRMED",
+                            updated.getCustomerId(),
+                            "Order Confirmed",
+                            "Your order #" + updated.getOrderId() + " has been confirmed by the restaurant.",
+                            updated.getOrderId(),
+                            "ORDER"
+                    )
+            );
+            return;
+        }
+
+        if (updated.getOrderStatus() != OrderStatus.REJECTED) {
+            return;
+        }
+
+        log.info("Order rejected by restaurant orderId={} previousStatus={} actorRole={} actorId={}",
+                updated.getOrderId(), previousStatus, currentUser.getRole(), currentUser.getUserId());
+
+        notificationEventPublisher.publishOrderNotification(
+                new NotificationEvent(
+                        "ORDER_REJECTED",
+                        updated.getCustomerId(),
+                        "Order Rejected",
+                        "Your order #" + updated.getOrderId() + " was rejected by the restaurant.",
+                        updated.getOrderId(),
+                        "ORDER"
+                )
+        );
+
+        requestRefundIfRequired(updated, token);
+    }
+
+    private void requestRefundIfRequired(Order order, String token) {
+        if (order.getPaymentMode() == PaymentMode.COD) {
+            return;
+        }
+
+        try {
+            paymentClient.refundPayment(order.getOrderId(), "Bearer " + token);
+            log.info("Refund requested for orderId={}", order.getOrderId());
+        } catch (Exception ex) {
+            log.error("Refund call failed for orderId={}", order.getOrderId(), ex);
         }
     }
 

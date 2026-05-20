@@ -83,19 +83,24 @@ class OrderControllerTest {
 
     @Test
     void getOrdersByRestaurantShouldUseAuthenticatedOwner() {
-        when(orderService.getOrdersByRestaurant(10L, customer)).thenReturn(List.of(orderResponse()));
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addHeader("Authorization", "Bearer token123");
+        when(orderService.getOrdersByRestaurant(10L, customer, "token123")).thenReturn(List.of(orderResponse()));
 
-        ResponseEntity<List<OrderResponseDto>> response = orderController.getOrdersByRestaurant(10L, authentication);
+        ResponseEntity<List<OrderResponseDto>> response =
+                orderController.getOrdersByRestaurant(10L, authentication, servletRequest);
 
         assertThat(response.getBody()).hasSize(1);
     }
 
     @Test
     void updateOrderStatusShouldDelegate() {
-        when(orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner)).thenReturn(orderResponse());
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addHeader("Authorization", "Bearer token123");
+        when(orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner, "token123")).thenReturn(orderResponse());
 
         ResponseEntity<OrderResponseDto> response =
-                orderController.updateOrderStatus(100L, OrderStatus.PREPARING, ownerAuthentication);
+                orderController.updateOrderStatus(100L, OrderStatus.PREPARING, ownerAuthentication, servletRequest);
 
         assertThat(response.getBody().getOrderId()).isEqualTo(100L);
     }
