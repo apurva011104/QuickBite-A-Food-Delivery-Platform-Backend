@@ -66,10 +66,15 @@ class OrderControllerSecurityTest {
 
     @Test
     void ownerShouldAccessRestaurantEndpoint() throws Exception {
-        when(orderService.getOrdersByRestaurant(org.mockito.ArgumentMatchers.eq(10L), any(UserPrincipal.class)))
+        when(orderService.getOrdersByRestaurant(
+                org.mockito.ArgumentMatchers.eq(10L),
+                any(UserPrincipal.class),
+                org.mockito.ArgumentMatchers.eq("token123")))
                 .thenReturn(java.util.List.of());
 
-        mockMvc.perform(get("/orders/restaurant/10").with(ownerPrincipal()))
+        mockMvc.perform(get("/orders/restaurant/10")
+                        .header("Authorization", "Bearer token123")
+                        .with(ownerPrincipal()))
                 .andExpect(status().isOk());
     }
 

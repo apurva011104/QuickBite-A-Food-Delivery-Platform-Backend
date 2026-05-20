@@ -15,11 +15,11 @@ public interface OrderService {
 
     List<OrderResponseDto> getOrdersByCustomer(Long customerId, String token);
 
-    List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser);
+    List<OrderResponseDto> getOrdersByRestaurant(Long restaurantId, UserPrincipal currentUser, String token);
 
     List<OrderResponseDto> getActiveOrders();
 
-    OrderResponseDto updateOrderStatus(Long orderId, OrderStatus status, UserPrincipal currentUser);
+    OrderResponseDto updateOrderStatus(Long orderId, OrderStatus status, UserPrincipal currentUser, String token);
 
     OrderResponseDto assignDeliveryAgent(Long orderId, Long agentId);
 

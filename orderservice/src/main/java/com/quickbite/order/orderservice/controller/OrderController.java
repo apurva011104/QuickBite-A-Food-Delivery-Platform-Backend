@@ -60,9 +60,11 @@ public class OrderController {
 
     @GetMapping("/restaurant/{restaurantId}")
     public ResponseEntity<List<OrderResponseDto>> getOrdersByRestaurant(@PathVariable Long restaurantId,
-                                                                        Authentication authentication) {
+                                                                        Authentication authentication,
+                                                                        HttpServletRequest httpServletRequest) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
-        return ResponseEntity.ok(orderService.getOrdersByRestaurant(restaurantId, user));
+        String token = extractToken(httpServletRequest);
+        return ResponseEntity.ok(orderService.getOrdersByRestaurant(restaurantId, user, token));
     }
 
     @GetMapping("/active")
@@ -73,9 +75,11 @@ public class OrderController {
     @PutMapping("/{orderId}/status")
     public ResponseEntity<OrderResponseDto> updateOrderStatus(@PathVariable Long orderId,
                                                               @RequestParam OrderStatus status,
-                                                              Authentication authentication) {
+                                                              Authentication authentication,
+                                                              HttpServletRequest httpServletRequest) {
         UserPrincipal user = (UserPrincipal) authentication.getPrincipal();
-        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, status, user));
+        String token = extractToken(httpServletRequest);
+        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, status, user, token));
     }
 
     @PutMapping("/{orderId}/assign-agent")
