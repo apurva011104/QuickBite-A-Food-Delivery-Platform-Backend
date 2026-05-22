@@ -414,43 +414,82 @@ public class OrderServiceImpl implements OrderService {
                                               OrderStatus previousStatus,
                                               UserPrincipal currentUser,
                                               String token) {
-        if (!"OWNER".equals(currentUser.getRole()) && !"ADMIN".equals(currentUser.getRole())) {
-            return;
-        }
-
-        if (updated.getOrderStatus() == OrderStatus.CONFIRMED) {
-            notificationEventPublisher.publishOrderNotification(
-                    new NotificationEvent(
+        switch (updated.getOrderStatus()) {
+            case CONFIRMED -> {
+                if (isRestaurantActor(currentUser)) {
+                    publishCustomerOrderNotification(
+                            updated,
                             "ORDER_CONFIRMED",
-                            updated.getCustomerId(),
                             "Order Confirmed",
-                            "Your order #" + updated.getOrderId() + " has been confirmed by the restaurant.",
-                            updated.getOrderId(),
-                            "ORDER"
-                    )
+                            "Your order #" + updated.getOrderId() + " has been confirmed by the restaurant."
+                    );
+                }
+            }
+            case PREPARING -> publishCustomerOrderNotification(
+                    updated,
+                    "ORDER_PREPARING",
+                    "Order Preparing",
+                    "Your order #" + updated.getOrderId() + " is now being prepared."
             );
-            return;
+            case READY_FOR_PICKUP -> publishCustomerOrderNotification(
+                    updated,
+                    "ORDER_READY_FOR_PICKUP",
+                    "Ready for Pickup",
+                    "Your order #" + updated.getOrderId()
+                            + " is packed and ready for pickup by the delivery agent."
+            );
+            case OUT_FOR_DELIVERY -> publishCustomerOrderNotification(
+                    updated,
+                    "ORDER_OUT_FOR_DELIVERY",
+                    "Out for Delivery",
+                    "Your order #" + updated.getOrderId() + " is out for delivery."
+            );
+            case DELIVERED -> publishCustomerOrderNotification(
+                    updated,
+                    "ORDER_DELIVERED",
+                    "Order Delivered",
+                    "Your order #" + updated.getOrderId() + " has been delivered. Enjoy your meal!"
+            );
+            case REJECTED -> {
+                if (!isRestaurantActor(currentUser)) {
+                    return;
+                }
+
+                log.info("Order rejected by restaurant orderId={} previousStatus={} actorRole={} actorId={}",
+                        updated.getOrderId(), previousStatus, currentUser.getRole(), currentUser.getUserId());
+
+                publishCustomerOrderNotification(
+                        updated,
+                        "ORDER_REJECTED",
+                        "Order Rejected",
+                        "Your order #" + updated.getOrderId() + " was rejected by the restaurant."
+                );
+
+                requestRefundIfRequired(updated, token);
+            }
+            default -> {
+            }
         }
+    }
 
-        if (updated.getOrderStatus() != OrderStatus.REJECTED) {
-            return;
-        }
+    private boolean isRestaurantActor(UserPrincipal currentUser) {
+        return "OWNER".equals(currentUser.getRole()) || "ADMIN".equals(currentUser.getRole());
+    }
 
-        log.info("Order rejected by restaurant orderId={} previousStatus={} actorRole={} actorId={}",
-                updated.getOrderId(), previousStatus, currentUser.getRole(), currentUser.getUserId());
-
+    private void publishCustomerOrderNotification(Order order,
+                                                  String eventType,
+                                                  String title,
+                                                  String message) {
         notificationEventPublisher.publishOrderNotification(
                 new NotificationEvent(
-                        "ORDER_REJECTED",
-                        updated.getCustomerId(),
-                        "Order Rejected",
-                        "Your order #" + updated.getOrderId() + " was rejected by the restaurant.",
-                        updated.getOrderId(),
+                        eventType,
+                        order.getCustomerId(),
+                        title,
+                        message,
+                        order.getOrderId(),
                         "ORDER"
                 )
         );
-
-        requestRefundIfRequired(updated, token);
     }
 
     private void requestRefundIfRequired(Order order, String token) {

@@ -375,7 +375,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.CONFIRMED, owner, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.CONFIRMED);
-        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
+        assertPublishedNotification("ORDER_CONFIRMED", "Order Confirmed");
     }
 
     @Test
@@ -387,6 +387,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.PREPARING, owner, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.PREPARING);
+        assertPublishedNotification("ORDER_PREPARING", "Order Preparing");
     }
 
     @Test
@@ -398,6 +399,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.READY_FOR_PICKUP, owner, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.READY_FOR_PICKUP);
+        assertPublishedNotification("ORDER_READY_FOR_PICKUP", "Ready for Pickup");
     }
 
     @Test
@@ -410,7 +412,7 @@ class OrderServiceImplTest {
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.REJECTED);
         verify(paymentClient).refundPayment(100L, "Bearer token");
-        verify(notificationEventPublisher).publishOrderNotification(any(NotificationEvent.class));
+        assertPublishedNotification("ORDER_REJECTED", "Order Rejected");
     }
 
     @Test
@@ -471,6 +473,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.OUT_FOR_DELIVERY, agent, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+        assertPublishedNotification("ORDER_OUT_FOR_DELIVERY", "Out for Delivery");
     }
 
     @Test
@@ -482,6 +485,7 @@ class OrderServiceImplTest {
         OrderResponseDto result = orderService.updateOrderStatus(100L, OrderStatus.DELIVERED, agent, "token");
 
         assertThat(result.getOrderStatus()).isEqualTo(OrderStatus.DELIVERED);
+        assertPublishedNotification("ORDER_DELIVERED", "Order Delivered");
     }
 
     @Test
@@ -611,5 +615,15 @@ class OrderServiceImplTest {
         verify(paymentClient).processPayment(captor.capture(), eq("Bearer token"));
         assertThat(captor.getValue().getAmount()).isEqualByComparingTo("330");
         assertThat(captor.getValue().getMode()).isEqualTo(PaymentMode.UPI);
+    }
+
+    private void assertPublishedNotification(String eventType, String title) {
+        ArgumentCaptor<NotificationEvent> captor = ArgumentCaptor.forClass(NotificationEvent.class);
+        verify(notificationEventPublisher).publishOrderNotification(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo(eventType);
+        assertThat(captor.getValue().getTitle()).isEqualTo(title);
+        assertThat(captor.getValue().getRecipientId()).isEqualTo(order.getCustomerId());
+        assertThat(captor.getValue().getRelatedId()).isEqualTo(order.getOrderId());
+        assertThat(captor.getValue().getRelatedType()).isEqualTo("ORDER");
     }
 }
