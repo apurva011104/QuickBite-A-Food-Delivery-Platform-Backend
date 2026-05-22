@@ -33,6 +33,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/avg-food/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/avg-delivery/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reviews/avg-menu-item/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reviews/menu-item/*/summary").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/reviews").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/reviews/customer/**").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/reviews/*/moderate").hasRole("ADMIN")

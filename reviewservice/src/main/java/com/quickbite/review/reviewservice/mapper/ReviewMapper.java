@@ -1,9 +1,13 @@
 package com.quickbite.review.reviewservice.mapper;
 
+import java.util.List;
+
+import com.quickbite.review.reviewservice.dto.responseDto.MenuItemReviewResponseDto;
 import org.springframework.stereotype.Component;
 
 import com.quickbite.review.reviewservice.dto.requestDto.ReviewRequestDto;
 import com.quickbite.review.reviewservice.dto.responseDto.ReviewResponseDto;
+import com.quickbite.review.reviewservice.entity.MenuItemReview;
 import com.quickbite.review.reviewservice.entity.Review;
 
 @Component
@@ -16,9 +20,6 @@ public class ReviewMapper {
 
         Review review = new Review();
         review.setOrderId(dto.getOrderId());
-        review.setRestaurantId(dto.getRestaurantId());
-        review.setAgentId(dto.getAgentId());
-        review.setFoodRating(dto.getFoodRating());
         review.setDeliveryRating(dto.getDeliveryRating());
         review.setComment(dto.getComment());
 
@@ -43,6 +44,28 @@ public class ReviewMapper {
         dto.setReviewDate(review.getReviewDate());
         dto.setUpdatedAt(review.getUpdatedAt());
 
+        return dto;
+    }
+
+    public List<MenuItemReviewResponseDto> toMenuItemResponseDtos(List<MenuItemReview> itemReviews) {
+        return itemReviews.stream().map(this::toMenuItemResponseDto).toList();
+    }
+
+    public MenuItemReviewResponseDto toMenuItemResponseDto(MenuItemReview itemReview) {
+        if (itemReview == null) {
+            return null;
+        }
+
+        MenuItemReviewResponseDto dto = new MenuItemReviewResponseDto();
+        dto.setMenuItemReviewId(itemReview.getMenuItemReviewId());
+        dto.setOrderId(itemReview.getOrderId());
+        dto.setMenuItemId(itemReview.getMenuItemId());
+        dto.setItemName(itemReview.getItemName());
+        dto.setRating(itemReview.getRating());
+        dto.setComment(itemReview.getComment());
+        dto.setVerified(itemReview.getVerified());
+        dto.setReviewDate(itemReview.getReviewDate());
+        dto.setUpdatedAt(itemReview.getUpdatedAt());
         return dto;
     }
 }
