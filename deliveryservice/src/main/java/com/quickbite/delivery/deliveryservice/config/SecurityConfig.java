@@ -48,6 +48,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/orders/*/completion-otp").hasAnyRole("CUSTOMER", "ADMIN")
 
                         .requestMatchers(HttpMethod.PUT, "/api/v1/agents/*/verify").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/agents/pending").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/verified").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/agents/assign-order").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/agents/available").hasAnyRole("ADMIN", "OWNER")

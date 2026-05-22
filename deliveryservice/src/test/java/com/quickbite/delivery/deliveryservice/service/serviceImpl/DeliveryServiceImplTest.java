@@ -25,6 +25,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.AssignOrderRequestD
 import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.LocationUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryRequestDto;
+import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.entity.ActiveDelivery;
 import com.quickbite.delivery.deliveryservice.entity.DeliveryAgent;
 import com.quickbite.delivery.deliveryservice.entity.DeliveryStatus;
@@ -116,6 +117,56 @@ class DeliveryServiceImplTest {
         assertThat(captor.getValue().getStatus()).isEqualTo(DeliveryStatus.ASSIGNED);
         verify(orderClient).assignDeliveryAgent(101L, 10L, "Bearer admin-token");
         verify(notificationEventPublisher).publishDeliveryNotification(any(NotificationEvent.class));
+    }
+
+    @Test
+    void getAllPendingAgentsShouldReturnUnverifiedAgents() {
+        DeliveryAgent pendingAgent = new DeliveryAgent();
+        pendingAgent.setAgentId(15L);
+        pendingAgent.setUserId(25L);
+        pendingAgent.setFullName("Pending Rider");
+        pendingAgent.setPhone("7777777777");
+        pendingAgent.setVehicleType(VehicleType.SCOOTER);
+        pendingAgent.setVehicleNumber("KA03AB1234");
+        pendingAgent.setVerified(false);
+
+        when(deliveryRepository.findByVerifiedFalseOrderByCreatedAtAsc()).thenReturn(List.of(pendingAgent));
+
+        var response = deliveryService.getAllPendingAgents();
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getAgentId()).isEqualTo(15L);
+        assertThat(response.get(0).isVerified()).isFalse();
+    }
+
+    @Test
+    void verifyAgentShouldApprovePendingAgent() {
+        VerificationRequestDto requestDto = new VerificationRequestDto();
+        requestDto.setVerified(true);
+        agent.setVerified(false);
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(deliveryRepository.save(any(DeliveryAgent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = deliveryService.verifyAgent(7L, requestDto);
+
+        assertThat(response.getMessage()).isEqualTo("Agent approved successfully");
+        assertThat(agent.isVerified()).isTrue();
+        verify(deliveryRepository).save(agent);
+    }
+
+    @Test
+    void verifyAgentShouldDeletePendingAgentWhenRejected() {
+        VerificationRequestDto requestDto = new VerificationRequestDto();
+        requestDto.setVerified(false);
+        agent.setVerified(false);
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+
+        var response = deliveryService.verifyAgent(7L, requestDto);
+
+        assertThat(response.getMessage()).isEqualTo("Agent rejected successfully");
+        verify(deliveryRepository).delete(agent);
     }
 
     @Test

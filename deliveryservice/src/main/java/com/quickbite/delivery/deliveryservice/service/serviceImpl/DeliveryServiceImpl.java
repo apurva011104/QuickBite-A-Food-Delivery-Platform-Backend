@@ -139,6 +139,15 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<DeliveryAgentResponseDto> getAllPendingAgents() {
+        return deliveryRepository.findByVerifiedFalseOrderByCreatedAtAsc()
+                .stream()
+                .map(deliveryAgentMapper::toResponseDto)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DeliveryAgentResponseDto> getNearbyAgents(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm) {
         validateCoordinates(latitude, longitude);
 
@@ -216,16 +225,22 @@ public class DeliveryServiceImpl implements DeliveryService {
     public MessageResponseDto verifyAgent(Long agentId, VerificationRequestDto requestDto) {
         DeliveryAgent agent = getAgentOrThrow(agentId);
 
-        agent.setVerified(requestDto.getVerified());
+        if (Boolean.TRUE.equals(requestDto.getVerified())) {
+            agent.setVerified(true);
+            deliveryRepository.save(agent);
 
-        if (!Boolean.TRUE.equals(requestDto.getVerified())) {
-            agent.setAvailable(false);
+            log.info("Verification approved for agentId={}", agentId);
+            return new MessageResponseDto("Agent approved successfully");
         }
 
-        deliveryRepository.save(agent);
+        if (agent.isVerified()) {
+            throw new BadRequestException("Verified agents cannot be rejected from this dashboard");
+        }
 
-        log.info("Verification updated for agentId={} verified={}", agentId, requestDto.getVerified());
-        return new MessageResponseDto("Agent verification status updated successfully");
+        deliveryRepository.delete(agent);
+
+        log.info("Pending agent rejected and removed agentId={}", agentId);
+        return new MessageResponseDto("Agent rejected successfully");
     }
 
     @Override

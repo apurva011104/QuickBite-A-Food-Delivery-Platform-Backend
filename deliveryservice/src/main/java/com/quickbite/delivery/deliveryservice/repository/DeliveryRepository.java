@@ -19,6 +19,8 @@ public interface DeliveryRepository extends JpaRepository<DeliveryAgent, Long> {
 
     List<DeliveryAgent> findByVerifiedTrue();
 
+    List<DeliveryAgent> findByVerifiedFalseOrderByCreatedAtAsc();
+
     List<DeliveryAgent> findByAvailableTrueAndVerifiedTrue();
 
     long countByAvailableTrue();
