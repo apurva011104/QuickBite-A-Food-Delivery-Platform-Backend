@@ -8,3 +8,4 @@ paymentservice/*
 deliveryservice/*
 notificationservice/*
 quickbiteweb/*
+.env
