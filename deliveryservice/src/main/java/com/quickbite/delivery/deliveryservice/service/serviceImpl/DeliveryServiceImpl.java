@@ -2,6 +2,8 @@ package com.quickbite.delivery.deliveryservice.service.serviceImpl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -10,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.quickbite.delivery.deliveryservice.client.OrderClient;
+import com.quickbite.delivery.deliveryservice.client.dto.OrderSummaryResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.AssignOrderRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.AvailabilityUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
@@ -19,6 +23,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryReque
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
+import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryCompletionOtpResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
 import com.quickbite.delivery.deliveryservice.entity.ActiveDelivery;
@@ -34,6 +39,7 @@ import com.quickbite.delivery.deliveryservice.mapper.DeliveryAgentMapper;
 import com.quickbite.delivery.deliveryservice.repository.ActiveDeliveryRepository;
 import com.quickbite.delivery.deliveryservice.repository.DeliveryRepository;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
+import com.quickbite.delivery.deliveryservice.service.DeliveryOtpMailService;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
 import com.quickbite.delivery.deliveryservice.service.NotificationEventPublisher;
 
@@ -44,6 +50,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DeliveryServiceImpl implements DeliveryService {
 
+    private static final SecureRandom OTP_RANDOM = new SecureRandom();
     private static final List<DeliveryStatus> ACTIVE_STATUSES = Arrays.asList(
             DeliveryStatus.ASSIGNED,
             DeliveryStatus.ACCEPTED,
@@ -61,6 +68,12 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Autowired
     private NotificationEventPublisher notificationEventPublisher;
+
+    @Autowired
+    private OrderClient orderClient;
+
+    @Autowired
+    private DeliveryOtpMailService deliveryOtpMailService;
 
 
     @Override
@@ -242,8 +255,13 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
-    public MessageResponseDto assignOrder(AssignOrderRequestDto requestDto) {
+    public MessageResponseDto assignOrder(AssignOrderRequestDto requestDto, String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        OrderSummaryResponseDto order = getOrderOrThrow(requestDto.getOrderId(), authorizationHeader);
+
+        if (!"READY_FOR_PICKUP".equals(order.getOrderStatus())) {
+            throw new BadRequestException("Only READY_FOR_PICKUP orders can be assigned to an agent");
+        }
 
         if (!agent.isVerified()) {
             throw new AgentNotVerifiedException("Agent is not verified");
@@ -267,6 +285,7 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         agent.setAvailable(false);
         deliveryRepository.save(agent);
+        syncAssignedAgent(requestDto.getOrderId(), agent.getUserId(), authorizationHeader);
 
         notificationEventPublisher.publishDeliveryNotification(
                 new NotificationEvent(
@@ -331,9 +350,12 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
-    public MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
+    public MessageResponseDto pickupDelivery(UserPrincipal currentUser,
+                                             PickupDeliveryRequestDto requestDto,
+                                             String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
+        OrderSummaryResponseDto order = getOrderOrThrow(requestDto.getOrderId(), authorizationHeader);
 
         ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
         validateAssignedAgent(activeDelivery, requestDto.getAgentId());
@@ -342,17 +364,26 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new BadRequestException("Delivery can only be picked up after the agent accepts it");
         }
 
+        activeDelivery.setCompletionOtp(generateCompletionOtp());
+        activeDelivery.setCompletionOtpGeneratedAt(LocalDateTime.now());
+        activeDelivery.setCompletionOtpEmailSentAt(null);
         activeDelivery.setStatus(DeliveryStatus.PICKED_UP);
         activeDeliveryRepository.save(activeDelivery);
+        syncOrderStatus(requestDto.getOrderId(), "OUT_FOR_DELIVERY", authorizationHeader);
+        publishCustomerCompletionOtpNotification(order, activeDelivery);
 
         log.info("Delivery picked up for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
-                "Order " + requestDto.getOrderId() + " marked as picked up by agent " + requestDto.getAgentId()
+                "Order " + requestDto.getOrderId()
+                        + " marked as picked up by agent " + requestDto.getAgentId()
+                        + ". Delivery confirmation OTP sent to the customer."
         );
     }
 
     @Override
-    public MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto) {
+    public MessageResponseDto completeDelivery(UserPrincipal currentUser,
+                                               CompleteDeliveryRequestDto requestDto,
+                                               String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
 
@@ -363,8 +394,20 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new BadRequestException("Delivery must be picked up before it can be completed");
         }
 
+        if (activeDelivery.getCompletionOtp() == null || activeDelivery.getCompletionOtp().isBlank()) {
+            throw new BadRequestException("Delivery confirmation OTP has not been generated yet");
+        }
+
+        if (!activeDelivery.getCompletionOtp().equals(requestDto.getOtp().trim())) {
+            throw new BadRequestException("Invalid delivery confirmation OTP");
+        }
+
+        activeDelivery.setCompletionOtp(null);
+        activeDelivery.setCompletionOtpGeneratedAt(null);
+        activeDelivery.setCompletionOtpEmailSentAt(null);
         activeDelivery.setStatus(DeliveryStatus.DELIVERED);
         activeDeliveryRepository.save(activeDelivery);
+        syncOrderStatus(requestDto.getOrderId(), "DELIVERED", authorizationHeader);
 
         agent.setAvailable(true);
         agent.setTotalDeliveries(agent.getTotalDeliveries() + 1);
@@ -406,9 +449,42 @@ public class DeliveryServiceImpl implements DeliveryService {
                 .toList();
     }
 
+    @Override
+    public DeliveryCompletionOtpResponseDto getCompletionOtp(Long orderId,
+                                                             UserPrincipal currentUser,
+                                                             String authorizationHeader) {
+        OrderSummaryResponseDto order = getOrderOrThrow(orderId, authorizationHeader);
+        validateOrderAccessForCompletionOtp(order, currentUser);
+
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(orderId);
+        if (activeDelivery.getStatus() != DeliveryStatus.PICKED_UP
+                || activeDelivery.getCompletionOtp() == null
+                || activeDelivery.getCompletionOtp().isBlank()) {
+            throw new BadRequestException("Delivery confirmation OTP is not available yet");
+        }
+
+        sendCompletionOtpEmailIfNeeded(activeDelivery, currentUser, orderId);
+
+        return new DeliveryCompletionOtpResponseDto(
+                orderId,
+                activeDelivery.getCompletionOtp(),
+                activeDelivery.getStatus().name(),
+                activeDelivery.getCompletionOtpGeneratedAt()
+        );
+    }
+
     private DeliveryAgent getAgentOrThrow(Long agentId) {
         return deliveryRepository.findByAgentId(agentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
+    }
+
+    private OrderSummaryResponseDto getOrderOrThrow(Long orderId, String authorizationHeader) {
+        try {
+            return orderClient.getOrderById(orderId, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to fetch order {} from order service", orderId, ex);
+            throw new BadRequestException("Unable to fetch order details from order service");
+        }
     }
 
     private ActiveDelivery getAssignedDeliveryOrThrow(Long orderId) {
@@ -427,6 +503,16 @@ public class DeliveryServiceImpl implements DeliveryService {
     private void validateAgentOwnership(DeliveryAgent agent, UserPrincipal currentUser) {
         if (!agent.getUserId().equals(currentUser.getUserId())) {
             throw new UnauthorizedActionException("You are not allowed to perform this action");
+        }
+    }
+
+    private void validateOrderAccessForCompletionOtp(OrderSummaryResponseDto order, UserPrincipal currentUser) {
+        if ("ADMIN".equals(currentUser.getRole())) {
+            return;
+        }
+
+        if (!"CUSTOMER".equals(currentUser.getRole()) || !order.getCustomerId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to view this delivery confirmation OTP");
         }
     }
 
@@ -457,5 +543,62 @@ public class DeliveryServiceImpl implements DeliveryService {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return EARTH_RADIUS_KM * c;
+    }
+
+    private String generateCompletionOtp() {
+        return String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
+    }
+
+    private void sendCompletionOtpEmailIfNeeded(ActiveDelivery activeDelivery,
+                                                UserPrincipal currentUser,
+                                                Long orderId) {
+        if (!"CUSTOMER".equals(currentUser.getRole())
+                || activeDelivery.getCompletionOtpEmailSentAt() != null) {
+            return;
+        }
+
+        boolean emailSent = deliveryOtpMailService.sendDeliveryCompletionOtp(
+                currentUser.getEmail(),
+                orderId,
+                activeDelivery.getCompletionOtp()
+        );
+
+        if (emailSent) {
+            activeDelivery.setCompletionOtpEmailSentAt(LocalDateTime.now());
+            activeDeliveryRepository.save(activeDelivery);
+        }
+    }
+
+    private void publishCustomerCompletionOtpNotification(OrderSummaryResponseDto order, ActiveDelivery activeDelivery) {
+        notificationEventPublisher.publishDeliveryNotification(
+                new NotificationEvent(
+                        "DELIVERY_COMPLETION_OTP",
+                        order.getCustomerId(),
+                        "Delivery Confirmation OTP",
+                        "Share OTP " + activeDelivery.getCompletionOtp()
+                                + " with your delivery partner to complete order #" + order.getOrderId() + ".",
+                        order.getOrderId(),
+                        "ORDER"
+                )
+        );
+    }
+
+    private void syncAssignedAgent(Long orderId, Long agentUserId, String authorizationHeader) {
+        try {
+            orderClient.assignDeliveryAgent(orderId, agentUserId, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to synchronize assigned agent for orderId={} agentUserId={}",
+                    orderId, agentUserId, ex);
+            throw new BadRequestException("Unable to synchronize assigned agent with order service");
+        }
+    }
+
+    private void syncOrderStatus(Long orderId, String status, String authorizationHeader) {
+        try {
+            orderClient.updateOrderStatus(orderId, status, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to synchronize order status for orderId={} status={}", orderId, status, ex);
+            throw new BadRequestException("Unable to synchronize order status with order service");
+        }
     }
 }

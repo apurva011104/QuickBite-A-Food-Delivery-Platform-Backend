@@ -11,10 +11,12 @@ import org.springframework.web.bind.annotation.*;
 
 import com.quickbite.delivery.deliveryservice.dto.requestDto.*;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.*;
+import com.quickbite.delivery.deliveryservice.exception.BadRequestException;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -107,18 +109,24 @@ public class DeliveryController {
 
     @PostMapping("/assign-order")
     public ResponseEntity<MessageResponseDto> assignOrder(
-            @Valid @RequestBody AssignOrderRequestDto requestDto) {
+            @Valid @RequestBody AssignOrderRequestDto requestDto,
+            HttpServletRequest httpServletRequest) {
         log.info("API HIT - Assign orderId: {} to agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
-        return ResponseEntity.ok(deliveryService.assignOrder(requestDto));
+        return ResponseEntity.ok(deliveryService.assignOrder(requestDto, extractAuthorizationHeader(httpServletRequest)));
     }
 
     @PostMapping("/pickup-delivery")
     public ResponseEntity<MessageResponseDto> pickupDelivery(
             @Valid @RequestBody PickupDeliveryRequestDto requestDto,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
         UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Pickup delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
-        return ResponseEntity.ok(deliveryService.pickupDelivery(currentUser, requestDto));
+        return ResponseEntity.ok(deliveryService.pickupDelivery(
+                currentUser,
+                requestDto,
+                extractAuthorizationHeader(httpServletRequest)
+        ));
     }
 
     @PostMapping("/accept-delivery")
@@ -142,10 +150,28 @@ public class DeliveryController {
     @PostMapping("/complete-delivery")
     public ResponseEntity<MessageResponseDto> completeDelivery(
             @Valid @RequestBody CompleteDeliveryRequestDto requestDto,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
         UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Complete delivery for orderId: {} by agentId: {}", requestDto.getOrderId(), requestDto.getAgentId());
-        return ResponseEntity.ok(deliveryService.completeDelivery(currentUser, requestDto));
+        return ResponseEntity.ok(deliveryService.completeDelivery(
+                currentUser,
+                requestDto,
+                extractAuthorizationHeader(httpServletRequest)
+        ));
+    }
+
+    @GetMapping("/orders/{orderId}/completion-otp")
+    public ResponseEntity<DeliveryCompletionOtpResponseDto> getCompletionOtp(@PathVariable Long orderId,
+                                                                             Authentication authentication,
+                                                                             HttpServletRequest httpServletRequest) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Get completion OTP for orderId: {} by userId: {}", orderId, currentUser.getUserId());
+        return ResponseEntity.ok(deliveryService.getCompletionOtp(
+                orderId,
+                currentUser,
+                extractAuthorizationHeader(httpServletRequest)
+        ));
     }
 
     @GetMapping("/{agentId}/active-deliveries")
@@ -154,5 +180,14 @@ public class DeliveryController {
         UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
         log.info("API HIT - Get active deliveries for agentId: {}", agentId);
         return ResponseEntity.ok(deliveryService.getActiveDeliveries(agentId, currentUser));
+    }
+
+    private String extractAuthorizationHeader(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header;
+        }
+
+        throw new BadRequestException("Missing or invalid Authorization header");
     }
 }

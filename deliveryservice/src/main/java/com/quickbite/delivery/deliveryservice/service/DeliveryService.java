@@ -12,6 +12,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryReque
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
+import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryCompletionOtpResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
@@ -38,15 +39,23 @@ public interface DeliveryService {
 
     MessageResponseDto updateRating(Long agentId, RatingUpdateRequestDto requestDto);
 
-    MessageResponseDto assignOrder(AssignOrderRequestDto requestDto);
+    MessageResponseDto assignOrder(AssignOrderRequestDto requestDto, String authorizationHeader);
 
     MessageResponseDto acceptDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
     MessageResponseDto rejectDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
-    MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
+    MessageResponseDto pickupDelivery(UserPrincipal currentUser,
+                                      PickupDeliveryRequestDto requestDto,
+                                      String authorizationHeader);
 
-    MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto);
+    MessageResponseDto completeDelivery(UserPrincipal currentUser,
+                                        CompleteDeliveryRequestDto requestDto,
+                                        String authorizationHeader);
 
     List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId, UserPrincipal currentUser);
+
+    DeliveryCompletionOtpResponseDto getCompletionOtp(Long orderId,
+                                                      UserPrincipal currentUser,
+                                                      String authorizationHeader);
 }
