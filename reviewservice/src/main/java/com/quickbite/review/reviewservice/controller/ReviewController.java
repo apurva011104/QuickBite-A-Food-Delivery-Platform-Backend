@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.quickbite.review.reviewservice.dto.requestDto.ReviewModerationRequestDto;
 import com.quickbite.review.reviewservice.dto.requestDto.ReviewRequestDto;
 import com.quickbite.review.reviewservice.dto.requestDto.ReviewUpdateRequestDto;
+import com.quickbite.review.reviewservice.dto.responseDto.MenuItemReviewResponseDto;
+import com.quickbite.review.reviewservice.dto.responseDto.MenuItemReviewSummaryResponseDto;
 import com.quickbite.review.reviewservice.dto.responseDto.MessageResponseDto;
 import com.quickbite.review.reviewservice.dto.responseDto.ReviewResponseDto;
 import com.quickbite.review.reviewservice.security.UserPrincipal;
@@ -50,8 +52,10 @@ public class ReviewController {
     }
 
     @GetMapping("/order/{orderId}")
-    public ResponseEntity<ReviewResponseDto> getByOrderId(@PathVariable Long orderId) {
-        return ResponseEntity.ok(reviewService.getByOrderId(orderId));
+    public ResponseEntity<ReviewResponseDto> getByOrderId(@PathVariable Long orderId,
+                                                          Authentication authentication) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(reviewService.getByOrderId(orderId, currentUser));
     }
 
     @GetMapping("/restaurant/{restaurantId}")
@@ -69,6 +73,16 @@ public class ReviewController {
     @GetMapping("/agent/{agentId}")
     public ResponseEntity<List<ReviewResponseDto>> getByAgentId(@PathVariable Long agentId) {
         return ResponseEntity.ok(reviewService.getByAgentId(agentId));
+    }
+
+    @GetMapping("/menu-item/{menuItemId}")
+    public ResponseEntity<List<MenuItemReviewResponseDto>> getByMenuItemId(@PathVariable Long menuItemId) {
+        return ResponseEntity.ok(reviewService.getByMenuItemId(menuItemId));
+    }
+
+    @GetMapping("/menu-item/{menuItemId}/summary")
+    public ResponseEntity<MenuItemReviewSummaryResponseDto> getMenuItemReviewSummary(@PathVariable Long menuItemId) {
+        return ResponseEntity.ok(reviewService.getMenuItemReviewSummary(menuItemId));
     }
 
     @PutMapping("/{reviewId}")
@@ -100,6 +114,11 @@ public class ReviewController {
     @GetMapping("/avg-delivery/{agentId}")
     public ResponseEntity<Double> getAvgDeliveryRating(@PathVariable Long agentId) {
         return ResponseEntity.ok(reviewService.getAvgDeliveryRating(agentId));
+    }
+
+    @GetMapping("/avg-menu-item/{menuItemId}")
+    public ResponseEntity<Double> getAvgMenuItemRating(@PathVariable Long menuItemId) {
+        return ResponseEntity.ok(reviewService.getAvgMenuItemRating(menuItemId));
     }
 
     @GetMapping

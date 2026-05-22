@@ -1,6 +1,7 @@
 package com.quickbite.review.reviewservice.dto.responseDto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import lombok.Data;
 
@@ -18,4 +19,5 @@ public class ReviewResponseDto {
     private Boolean verified;
     private LocalDateTime reviewDate;
     private LocalDateTime updatedAt;
+    private List<MenuItemReviewResponseDto> itemReviews;
 }
