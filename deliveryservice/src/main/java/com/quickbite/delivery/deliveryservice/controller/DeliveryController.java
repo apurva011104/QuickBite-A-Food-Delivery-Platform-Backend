@@ -38,7 +38,7 @@ public class DeliveryController {
         return new ResponseEntity<>(deliveryService.registerAgent(currentUser, requestDto), HttpStatus.CREATED);
     }
 
-    @GetMapping("/{agentId}")
+    @GetMapping("/{agentId:\\d+}")
     public ResponseEntity<DeliveryAgentResponseDto> getAgentById(@PathVariable Long agentId) {
         log.info("API HIT - Get agent by agentId: {}", agentId);
         return ResponseEntity.ok(deliveryService.getAgentById(agentId));
@@ -77,7 +77,7 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.getNearbyAgents(latitude, longitude, radiusKm));
     }
 
-    @PutMapping("/{agentId}/location")
+    @PutMapping("/{agentId:\\d+}/location")
     public ResponseEntity<MessageResponseDto> updateLocation(
             @PathVariable Long agentId,
             @Valid @RequestBody LocationUpdateRequestDto requestDto,
@@ -87,7 +87,7 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.updateLocation(agentId, currentUser, requestDto));
     }
 
-    @PutMapping("/{agentId}/availability")
+    @PutMapping("/{agentId:\\d+}/availability")
     public ResponseEntity<MessageResponseDto> setAvailability(
             @PathVariable Long agentId,
             @Valid @RequestBody AvailabilityUpdateRequestDto requestDto,
@@ -97,7 +97,7 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.setAvailability(agentId, currentUser, requestDto));
     }
 
-    @PutMapping("/{agentId}/verify")
+    @PutMapping("/{agentId:\\d+}/verify")
     public ResponseEntity<MessageResponseDto> verifyAgent(
             @PathVariable Long agentId,
             @Valid @RequestBody VerificationRequestDto requestDto) {
@@ -105,7 +105,7 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.verifyAgent(agentId, requestDto));
     }
 
-    @PutMapping("/{agentId}/rating")
+    @PutMapping("/{agentId:\\d+}/rating")
     public ResponseEntity<MessageResponseDto> updateRating(
             @PathVariable Long agentId,
             @Valid @RequestBody RatingUpdateRequestDto requestDto) {
@@ -180,7 +180,7 @@ public class DeliveryController {
         ));
     }
 
-    @GetMapping("/{agentId}/active-deliveries")
+    @GetMapping("/{agentId:\\d+}/active-deliveries")
     public ResponseEntity<List<ActiveDeliveryResponseDto>> getActiveDeliveries(@PathVariable Long agentId,
                                                                                Authentication authentication) {
         UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
