@@ -29,6 +29,8 @@ public interface DeliveryService {
 
     List<DeliveryAgentResponseDto> getAllVerifiedAgents();
 
+    List<DeliveryAgentResponseDto> getAllPendingAgents();
+
     List<DeliveryAgentResponseDto> getNearbyAgents(BigDecimal latitude, BigDecimal longitude, BigDecimal radiusKm);
 
     MessageResponseDto updateLocation(Long agentId, UserPrincipal currentUser, LocationUpdateRequestDto requestDto);

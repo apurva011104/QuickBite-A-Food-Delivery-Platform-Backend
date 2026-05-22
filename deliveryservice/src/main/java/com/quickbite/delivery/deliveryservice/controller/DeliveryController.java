@@ -62,6 +62,12 @@ public class DeliveryController {
         return ResponseEntity.ok(deliveryService.getAllVerifiedAgents());
     }
 
+    @GetMapping("/pending")
+    public ResponseEntity<List<DeliveryAgentResponseDto>> getAllPendingAgents() {
+        log.info("API HIT - Get all pending agents");
+        return ResponseEntity.ok(deliveryService.getAllPendingAgents());
+    }
+
     @GetMapping("/nearby")
     public ResponseEntity<List<DeliveryAgentResponseDto>> getNearbyAgents(
             @RequestParam BigDecimal latitude,
