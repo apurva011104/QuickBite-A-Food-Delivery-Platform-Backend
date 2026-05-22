@@ -36,6 +36,7 @@ import com.quickbite.delivery.deliveryservice.mapper.DeliveryAgentMapper;
 import com.quickbite.delivery.deliveryservice.repository.ActiveDeliveryRepository;
 import com.quickbite.delivery.deliveryservice.repository.DeliveryRepository;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
+import com.quickbite.delivery.deliveryservice.service.DeliveryOtpMailService;
 import com.quickbite.delivery.deliveryservice.service.NotificationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,9 +54,13 @@ class DeliveryServiceImplTest {
     @Mock
     private OrderClient orderClient;
 
+    @Mock
+    private DeliveryOtpMailService deliveryOtpMailService;
+
     private DeliveryServiceImpl deliveryService;
     private DeliveryAgent agent;
     private UserPrincipal currentUser;
+    private UserPrincipal customerUser;
 
     @BeforeEach
     void setUp() {
@@ -65,8 +70,10 @@ class DeliveryServiceImplTest {
         ReflectionTestUtils.setField(deliveryService, "deliveryAgentMapper", new DeliveryAgentMapper());
         ReflectionTestUtils.setField(deliveryService, "notificationEventPublisher", notificationEventPublisher);
         ReflectionTestUtils.setField(deliveryService, "orderClient", orderClient);
+        ReflectionTestUtils.setField(deliveryService, "deliveryOtpMailService", deliveryOtpMailService);
 
         currentUser = new UserPrincipal(10L, "agent@quickbite.com", "AGENT");
+        customerUser = new UserPrincipal(21L, "customer@quickbite.com", "CUSTOMER");
 
         agent = new DeliveryAgent();
         agent.setAgentId(7L);
@@ -174,10 +181,12 @@ class DeliveryServiceImplTest {
         PickupDeliveryRequestDto requestDto = new PickupDeliveryRequestDto();
         requestDto.setAgentId(7L);
         requestDto.setOrderId(101L);
+        OrderSummaryResponseDto order = buildOrderSummary("READY_FOR_PICKUP");
 
         ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.ACCEPTED);
 
         when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(orderClient.getOrderById(101L, "Bearer agent-token")).thenReturn(order);
         when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
         when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -185,7 +194,9 @@ class DeliveryServiceImplTest {
 
         assertThat(response.getMessage()).contains("picked up");
         assertThat(activeDelivery.getStatus()).isEqualTo(DeliveryStatus.PICKED_UP);
+        assertThat(activeDelivery.getCompletionOtp()).matches("\\d{6}");
         verify(orderClient).updateOrderStatus(101L, "OUT_FOR_DELIVERY", "Bearer agent-token");
+        verify(notificationEventPublisher).publishDeliveryNotification(any(NotificationEvent.class));
     }
 
     @Test
@@ -244,8 +255,10 @@ class DeliveryServiceImplTest {
         CompleteDeliveryRequestDto requestDto = new CompleteDeliveryRequestDto();
         requestDto.setAgentId(7L);
         requestDto.setOrderId(101L);
+        requestDto.setOtp("654321");
 
         ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.PICKED_UP);
+        activeDelivery.setCompletionOtp("654321");
         agent.setAvailable(false);
 
         when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
@@ -259,6 +272,56 @@ class DeliveryServiceImplTest {
         assertThat(activeDelivery.getStatus()).isEqualTo(DeliveryStatus.DELIVERED);
         assertThat(agent.isAvailable()).isTrue();
         verify(orderClient).updateOrderStatus(101L, "DELIVERED", "Bearer agent-token");
+    }
+
+    @Test
+    void completeDeliveryShouldRejectInvalidOtp() {
+        CompleteDeliveryRequestDto requestDto = new CompleteDeliveryRequestDto();
+        requestDto.setAgentId(7L);
+        requestDto.setOrderId(101L);
+        requestDto.setOtp("000000");
+
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.PICKED_UP);
+        activeDelivery.setCompletionOtp("123456");
+
+        when(deliveryRepository.findByAgentId(7L)).thenReturn(Optional.of(agent));
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
+
+        assertThatThrownBy(() -> deliveryService.completeDelivery(currentUser, requestDto, "Bearer agent-token"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Invalid delivery confirmation OTP");
+    }
+
+    @Test
+    void getCompletionOtpShouldReturnOtpForOwningCustomer() {
+        ActiveDelivery activeDelivery = new ActiveDelivery(101L, 7L, DeliveryStatus.PICKED_UP);
+        activeDelivery.setCompletionOtp("123456");
+        OrderSummaryResponseDto order = buildOrderSummary("OUT_FOR_DELIVERY");
+
+        when(orderClient.getOrderById(101L, "Bearer customer-token")).thenReturn(order);
+        when(activeDeliveryRepository.findTopByOrderIdOrderByCreatedAtDesc(101L)).thenReturn(Optional.of(activeDelivery));
+        when(deliveryOtpMailService.sendDeliveryCompletionOtp("customer@quickbite.com", 101L, "123456"))
+                .thenReturn(true);
+        when(activeDeliveryRepository.save(any(ActiveDelivery.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = deliveryService.getCompletionOtp(101L, customerUser, "Bearer customer-token");
+
+        assertThat(response.getOtp()).isEqualTo("123456");
+        assertThat(response.getOrderId()).isEqualTo(101L);
+        assertThat(activeDelivery.getCompletionOtpEmailSentAt()).isNotNull();
+        verify(deliveryOtpMailService).sendDeliveryCompletionOtp("customer@quickbite.com", 101L, "123456");
+    }
+
+    @Test
+    void getCompletionOtpShouldRejectDifferentCustomer() {
+        UserPrincipal otherCustomer = new UserPrincipal(99L, "other@quickbite.com", "CUSTOMER");
+        OrderSummaryResponseDto order = buildOrderSummary("OUT_FOR_DELIVERY");
+
+        when(orderClient.getOrderById(101L, "Bearer customer-token")).thenReturn(order);
+
+        assertThatThrownBy(() -> deliveryService.getCompletionOtp(101L, otherCustomer, "Bearer customer-token"))
+                .isInstanceOf(UnauthorizedActionException.class)
+                .hasMessage("You are not allowed to view this delivery confirmation OTP");
     }
 
     @Test
@@ -320,5 +383,13 @@ class DeliveryServiceImplTest {
         ))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Radius must be greater than 0");
+    }
+
+    private OrderSummaryResponseDto buildOrderSummary(String orderStatus) {
+        OrderSummaryResponseDto order = new OrderSummaryResponseDto();
+        order.setOrderId(101L);
+        order.setOrderStatus(orderStatus);
+        order.setCustomerId(customerUser.getUserId());
+        return order;
     }
 }

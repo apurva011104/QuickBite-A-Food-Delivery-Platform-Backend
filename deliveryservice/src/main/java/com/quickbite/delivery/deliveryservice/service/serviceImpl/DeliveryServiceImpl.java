@@ -2,6 +2,8 @@ package com.quickbite.delivery.deliveryservice.service.serviceImpl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,6 +23,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryReque
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
+import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryCompletionOtpResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
 import com.quickbite.delivery.deliveryservice.entity.ActiveDelivery;
@@ -36,6 +39,7 @@ import com.quickbite.delivery.deliveryservice.mapper.DeliveryAgentMapper;
 import com.quickbite.delivery.deliveryservice.repository.ActiveDeliveryRepository;
 import com.quickbite.delivery.deliveryservice.repository.DeliveryRepository;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
+import com.quickbite.delivery.deliveryservice.service.DeliveryOtpMailService;
 import com.quickbite.delivery.deliveryservice.service.DeliveryService;
 import com.quickbite.delivery.deliveryservice.service.NotificationEventPublisher;
 
@@ -46,6 +50,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DeliveryServiceImpl implements DeliveryService {
 
+    private static final SecureRandom OTP_RANDOM = new SecureRandom();
     private static final List<DeliveryStatus> ACTIVE_STATUSES = Arrays.asList(
             DeliveryStatus.ASSIGNED,
             DeliveryStatus.ACCEPTED,
@@ -66,6 +71,9 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Autowired
     private OrderClient orderClient;
+
+    @Autowired
+    private DeliveryOtpMailService deliveryOtpMailService;
 
 
     @Override
@@ -347,6 +355,7 @@ public class DeliveryServiceImpl implements DeliveryService {
                                              String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
+        OrderSummaryResponseDto order = getOrderOrThrow(requestDto.getOrderId(), authorizationHeader);
 
         ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(requestDto.getOrderId());
         validateAssignedAgent(activeDelivery, requestDto.getAgentId());
@@ -355,13 +364,19 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new BadRequestException("Delivery can only be picked up after the agent accepts it");
         }
 
+        activeDelivery.setCompletionOtp(generateCompletionOtp());
+        activeDelivery.setCompletionOtpGeneratedAt(LocalDateTime.now());
+        activeDelivery.setCompletionOtpEmailSentAt(null);
         activeDelivery.setStatus(DeliveryStatus.PICKED_UP);
         activeDeliveryRepository.save(activeDelivery);
         syncOrderStatus(requestDto.getOrderId(), "OUT_FOR_DELIVERY", authorizationHeader);
+        publishCustomerCompletionOtpNotification(order, activeDelivery);
 
         log.info("Delivery picked up for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
-                "Order " + requestDto.getOrderId() + " marked as picked up by agent " + requestDto.getAgentId()
+                "Order " + requestDto.getOrderId()
+                        + " marked as picked up by agent " + requestDto.getAgentId()
+                        + ". Delivery confirmation OTP sent to the customer."
         );
     }
 
@@ -379,6 +394,17 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new BadRequestException("Delivery must be picked up before it can be completed");
         }
 
+        if (activeDelivery.getCompletionOtp() == null || activeDelivery.getCompletionOtp().isBlank()) {
+            throw new BadRequestException("Delivery confirmation OTP has not been generated yet");
+        }
+
+        if (!activeDelivery.getCompletionOtp().equals(requestDto.getOtp().trim())) {
+            throw new BadRequestException("Invalid delivery confirmation OTP");
+        }
+
+        activeDelivery.setCompletionOtp(null);
+        activeDelivery.setCompletionOtpGeneratedAt(null);
+        activeDelivery.setCompletionOtpEmailSentAt(null);
         activeDelivery.setStatus(DeliveryStatus.DELIVERED);
         activeDeliveryRepository.save(activeDelivery);
         syncOrderStatus(requestDto.getOrderId(), "DELIVERED", authorizationHeader);
@@ -423,6 +449,30 @@ public class DeliveryServiceImpl implements DeliveryService {
                 .toList();
     }
 
+    @Override
+    public DeliveryCompletionOtpResponseDto getCompletionOtp(Long orderId,
+                                                             UserPrincipal currentUser,
+                                                             String authorizationHeader) {
+        OrderSummaryResponseDto order = getOrderOrThrow(orderId, authorizationHeader);
+        validateOrderAccessForCompletionOtp(order, currentUser);
+
+        ActiveDelivery activeDelivery = getAssignedDeliveryOrThrow(orderId);
+        if (activeDelivery.getStatus() != DeliveryStatus.PICKED_UP
+                || activeDelivery.getCompletionOtp() == null
+                || activeDelivery.getCompletionOtp().isBlank()) {
+            throw new BadRequestException("Delivery confirmation OTP is not available yet");
+        }
+
+        sendCompletionOtpEmailIfNeeded(activeDelivery, currentUser, orderId);
+
+        return new DeliveryCompletionOtpResponseDto(
+                orderId,
+                activeDelivery.getCompletionOtp(),
+                activeDelivery.getStatus().name(),
+                activeDelivery.getCompletionOtpGeneratedAt()
+        );
+    }
+
     private DeliveryAgent getAgentOrThrow(Long agentId) {
         return deliveryRepository.findByAgentId(agentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
@@ -456,6 +506,16 @@ public class DeliveryServiceImpl implements DeliveryService {
         }
     }
 
+    private void validateOrderAccessForCompletionOtp(OrderSummaryResponseDto order, UserPrincipal currentUser) {
+        if ("ADMIN".equals(currentUser.getRole())) {
+            return;
+        }
+
+        if (!"CUSTOMER".equals(currentUser.getRole()) || !order.getCustomerId().equals(currentUser.getUserId())) {
+            throw new UnauthorizedActionException("You are not allowed to view this delivery confirmation OTP");
+        }
+    }
+
     private void validateCoordinates(BigDecimal latitude, BigDecimal longitude) {
         if (latitude == null || longitude == null) {
             throw new BadRequestException("Latitude and longitude are required");
@@ -483,6 +543,44 @@ public class DeliveryServiceImpl implements DeliveryService {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return EARTH_RADIUS_KM * c;
+    }
+
+    private String generateCompletionOtp() {
+        return String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
+    }
+
+    private void sendCompletionOtpEmailIfNeeded(ActiveDelivery activeDelivery,
+                                                UserPrincipal currentUser,
+                                                Long orderId) {
+        if (!"CUSTOMER".equals(currentUser.getRole())
+                || activeDelivery.getCompletionOtpEmailSentAt() != null) {
+            return;
+        }
+
+        boolean emailSent = deliveryOtpMailService.sendDeliveryCompletionOtp(
+                currentUser.getEmail(),
+                orderId,
+                activeDelivery.getCompletionOtp()
+        );
+
+        if (emailSent) {
+            activeDelivery.setCompletionOtpEmailSentAt(LocalDateTime.now());
+            activeDeliveryRepository.save(activeDelivery);
+        }
+    }
+
+    private void publishCustomerCompletionOtpNotification(OrderSummaryResponseDto order, ActiveDelivery activeDelivery) {
+        notificationEventPublisher.publishDeliveryNotification(
+                new NotificationEvent(
+                        "DELIVERY_COMPLETION_OTP",
+                        order.getCustomerId(),
+                        "Delivery Confirmation OTP",
+                        "Share OTP " + activeDelivery.getCompletionOtp()
+                                + " with your delivery partner to complete order #" + order.getOrderId() + ".",
+                        order.getOrderId(),
+                        "ORDER"
+                )
+        );
     }
 
     private void syncAssignedAgent(Long orderId, Long agentUserId, String authorizationHeader) {

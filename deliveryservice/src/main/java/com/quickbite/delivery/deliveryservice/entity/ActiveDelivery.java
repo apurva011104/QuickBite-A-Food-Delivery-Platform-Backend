@@ -35,6 +35,13 @@ public class ActiveDelivery {
     @Column(nullable = false)
     private DeliveryStatus status = DeliveryStatus.ASSIGNED;
 
+    @Column(length = 6)
+    private String completionOtp;
+
+    private LocalDateTime completionOtpGeneratedAt;
+
+    private LocalDateTime completionOtpEmailSentAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

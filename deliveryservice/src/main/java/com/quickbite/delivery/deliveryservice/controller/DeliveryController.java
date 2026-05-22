@@ -161,6 +161,19 @@ public class DeliveryController {
         ));
     }
 
+    @GetMapping("/orders/{orderId}/completion-otp")
+    public ResponseEntity<DeliveryCompletionOtpResponseDto> getCompletionOtp(@PathVariable Long orderId,
+                                                                             Authentication authentication,
+                                                                             HttpServletRequest httpServletRequest) {
+        UserPrincipal currentUser = (UserPrincipal) authentication.getPrincipal();
+        log.info("API HIT - Get completion OTP for orderId: {} by userId: {}", orderId, currentUser.getUserId());
+        return ResponseEntity.ok(deliveryService.getCompletionOtp(
+                orderId,
+                currentUser,
+                extractAuthorizationHeader(httpServletRequest)
+        ));
+    }
+
     @GetMapping("/{agentId}/active-deliveries")
     public ResponseEntity<List<ActiveDeliveryResponseDto>> getActiveDeliveries(@PathVariable Long agentId,
                                                                                Authentication authentication) {

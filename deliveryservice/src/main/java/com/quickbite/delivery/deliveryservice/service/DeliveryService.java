@@ -12,6 +12,7 @@ import com.quickbite.delivery.deliveryservice.dto.requestDto.PickupDeliveryReque
 import com.quickbite.delivery.deliveryservice.dto.requestDto.RatingUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.VerificationRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.ActiveDeliveryResponseDto;
+import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryCompletionOtpResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.DeliveryAgentResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.responseDto.MessageResponseDto;
 import com.quickbite.delivery.deliveryservice.security.UserPrincipal;
@@ -53,4 +54,8 @@ public interface DeliveryService {
                                         String authorizationHeader);
 
     List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId, UserPrincipal currentUser);
+
+    DeliveryCompletionOtpResponseDto getCompletionOtp(Long orderId,
+                                                      UserPrincipal currentUser,
+                                                      String authorizationHeader);
 }
