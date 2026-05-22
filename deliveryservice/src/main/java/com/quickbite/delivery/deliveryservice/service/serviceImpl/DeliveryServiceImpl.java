@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.quickbite.delivery.deliveryservice.client.OrderClient;
+import com.quickbite.delivery.deliveryservice.client.dto.OrderSummaryResponseDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.AssignOrderRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.AvailabilityUpdateRequestDto;
 import com.quickbite.delivery.deliveryservice.dto.requestDto.CompleteDeliveryRequestDto;
@@ -61,6 +63,9 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Autowired
     private NotificationEventPublisher notificationEventPublisher;
+
+    @Autowired
+    private OrderClient orderClient;
 
 
     @Override
@@ -242,8 +247,13 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
-    public MessageResponseDto assignOrder(AssignOrderRequestDto requestDto) {
+    public MessageResponseDto assignOrder(AssignOrderRequestDto requestDto, String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
+        OrderSummaryResponseDto order = getOrderOrThrow(requestDto.getOrderId(), authorizationHeader);
+
+        if (!"READY_FOR_PICKUP".equals(order.getOrderStatus())) {
+            throw new BadRequestException("Only READY_FOR_PICKUP orders can be assigned to an agent");
+        }
 
         if (!agent.isVerified()) {
             throw new AgentNotVerifiedException("Agent is not verified");
@@ -267,6 +277,7 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         agent.setAvailable(false);
         deliveryRepository.save(agent);
+        syncAssignedAgent(requestDto.getOrderId(), agent.getUserId(), authorizationHeader);
 
         notificationEventPublisher.publishDeliveryNotification(
                 new NotificationEvent(
@@ -331,7 +342,9 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
-    public MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto) {
+    public MessageResponseDto pickupDelivery(UserPrincipal currentUser,
+                                             PickupDeliveryRequestDto requestDto,
+                                             String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
 
@@ -344,6 +357,7 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         activeDelivery.setStatus(DeliveryStatus.PICKED_UP);
         activeDeliveryRepository.save(activeDelivery);
+        syncOrderStatus(requestDto.getOrderId(), "OUT_FOR_DELIVERY", authorizationHeader);
 
         log.info("Delivery picked up for orderId={} by agentId={}", requestDto.getOrderId(), requestDto.getAgentId());
         return new MessageResponseDto(
@@ -352,7 +366,9 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     @Override
-    public MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto) {
+    public MessageResponseDto completeDelivery(UserPrincipal currentUser,
+                                               CompleteDeliveryRequestDto requestDto,
+                                               String authorizationHeader) {
         DeliveryAgent agent = getAgentOrThrow(requestDto.getAgentId());
         validateAgentOwnership(agent, currentUser);
 
@@ -365,6 +381,7 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         activeDelivery.setStatus(DeliveryStatus.DELIVERED);
         activeDeliveryRepository.save(activeDelivery);
+        syncOrderStatus(requestDto.getOrderId(), "DELIVERED", authorizationHeader);
 
         agent.setAvailable(true);
         agent.setTotalDeliveries(agent.getTotalDeliveries() + 1);
@@ -409,6 +426,15 @@ public class DeliveryServiceImpl implements DeliveryService {
     private DeliveryAgent getAgentOrThrow(Long agentId) {
         return deliveryRepository.findByAgentId(agentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found with ID: " + agentId));
+    }
+
+    private OrderSummaryResponseDto getOrderOrThrow(Long orderId, String authorizationHeader) {
+        try {
+            return orderClient.getOrderById(orderId, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to fetch order {} from order service", orderId, ex);
+            throw new BadRequestException("Unable to fetch order details from order service");
+        }
     }
 
     private ActiveDelivery getAssignedDeliveryOrThrow(Long orderId) {
@@ -457,5 +483,24 @@ public class DeliveryServiceImpl implements DeliveryService {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return EARTH_RADIUS_KM * c;
+    }
+
+    private void syncAssignedAgent(Long orderId, Long agentUserId, String authorizationHeader) {
+        try {
+            orderClient.assignDeliveryAgent(orderId, agentUserId, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to synchronize assigned agent for orderId={} agentUserId={}",
+                    orderId, agentUserId, ex);
+            throw new BadRequestException("Unable to synchronize assigned agent with order service");
+        }
+    }
+
+    private void syncOrderStatus(Long orderId, String status, String authorizationHeader) {
+        try {
+            orderClient.updateOrderStatus(orderId, status, authorizationHeader);
+        } catch (Exception ex) {
+            log.error("Unable to synchronize order status for orderId={} status={}", orderId, status, ex);
+            throw new BadRequestException("Unable to synchronize order status with order service");
+        }
     }
 }

@@ -38,15 +38,19 @@ public interface DeliveryService {
 
     MessageResponseDto updateRating(Long agentId, RatingUpdateRequestDto requestDto);
 
-    MessageResponseDto assignOrder(AssignOrderRequestDto requestDto);
+    MessageResponseDto assignOrder(AssignOrderRequestDto requestDto, String authorizationHeader);
 
     MessageResponseDto acceptDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
     MessageResponseDto rejectDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
 
-    MessageResponseDto pickupDelivery(UserPrincipal currentUser, PickupDeliveryRequestDto requestDto);
+    MessageResponseDto pickupDelivery(UserPrincipal currentUser,
+                                      PickupDeliveryRequestDto requestDto,
+                                      String authorizationHeader);
 
-    MessageResponseDto completeDelivery(UserPrincipal currentUser, CompleteDeliveryRequestDto requestDto);
+    MessageResponseDto completeDelivery(UserPrincipal currentUser,
+                                        CompleteDeliveryRequestDto requestDto,
+                                        String authorizationHeader);
 
     List<ActiveDeliveryResponseDto> getActiveDeliveries(Long agentId, UserPrincipal currentUser);
 }
